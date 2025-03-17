@@ -3,7 +3,8 @@ using Base: method_argnames
 using GraphMakie, GLMakie
 using Graphs
 
-
+# TODO
+# fix the result reference mechanism
 
 # similar to OutputReference in Jobflow
 # reference to a result that may or may not exist yet
@@ -25,13 +26,11 @@ struct WTask
     end
 end
 
-
 mutable struct Job
     name::String
     uuid::UUID
     task::WTask
     output::OutputRef
-
 end
 
 function Job(f::Function, args...)
@@ -42,15 +41,19 @@ function Job(f::Function, args...)
     Job(job_name, uuid, t, outputref)
 end
 
-# macro job(expr)
-#     uuid = UUIDs.uuid4()
-#     job_name = string(expr.args[1])
-#     t = WTask(expr.args[1], expr.args[2:end])
-#     outputref = OutputRef(uuid, Ref{Dict{String,Any}}())
-#     quote
-#         Job($job_name, $uuid, $t, $outputref)
-#     end
-# end
+# Macro to define jobs
+macro job(expr)
+    name = string(expr.args[1])
+    uuid = UUIDs.uuid4()
+    f = expr.args[1]
+    args = map(a -> eval(a), expr.args[2:end])
+    processed_args = map(arg -> arg isa OutputRef ? arg.result : arg, args)
+    wtask = WTask(Task(() -> f(processed_args...), 0), args...)
+    outputref = OutputRef(uuid, Ref{Dict{String,Any}}())
+    return quote
+        Job($name, $uuid, $wtask, $outputref)
+    end
+end
 
 function is_dag(g::SimpleDiGraph)
     try
@@ -143,8 +146,7 @@ end
 
 j1 = Job(add, 1, 2)
 j2 = Job(add, 2, 3)
-j3 = Job(add, j1.output, j2.output)
-
+j3 = Job(foo, j1.output, j2.output)
 flow = Flow([j1, j2, j3])
 
 g = flow.graph
@@ -157,6 +159,14 @@ map(n -> g.nodemap[n], g.nodeorder)
 
 # Flow([j1, j2])
 
+# FIXME
 
-
-
+j1 = @job add(1, 2)
+j2 = @job add(2, 3)
+j3 = @job add(j1.output, j2.output)
+j4 = @job add(j3.output, j2.output)
+flow = Flow([j1, j2, j3, j4])
+g = flow.graph
+graphplot(g.graph; method=:spring)
+map(n -> g.nodemap[n], g.nodeorder)
+j3.uuid
