@@ -4,7 +4,7 @@ using GraphMakie, GLMakie
 using Graphs
 
 # TODO
-# fix the result reference mechanism
+# multi-threading and async job excution
 
 # similar to OutputReference in Jobflow
 # reference to a result that may or may not exist yet
@@ -13,16 +13,20 @@ mutable struct OutputRef
     result::Any
 end
 
-struct WTask
+struct Unassigned
+end
+
+mutable struct WTask
+    f::Function
     task::Task
     args::Tuple
 
     function WTask(f, args...)
         @nospecialize f args
 
-        # sticky bit to false so it can run any available threads
+        # set sticky bit to false so it can run any available threads
         t = Task(() -> f(args...), 0)
-        new(t, args)
+        new(f, t, args)
     end
 end
 
@@ -37,7 +41,7 @@ function Job(f::Function, args...)
     uuid = UUIDs.uuid4()
     job_name = string(f)
     t = WTask(f, args...)
-    outputref = OutputRef(uuid, Ref{Dict{String,Any}}())
+    outputref = OutputRef(uuid, Unassigned())
     Job(job_name, uuid, t, outputref)
 end
 
@@ -47,13 +51,61 @@ macro job(expr)
     uuid = UUIDs.uuid4()
     f = expr.args[1]
     args = map(a -> eval(a), expr.args[2:end])
-    processed_args = map(arg -> arg isa OutputRef ? arg.result : arg, args)
-    wtask = WTask(Task(() -> f(processed_args...), 0), args...)
-    outputref = OutputRef(uuid, Ref{Dict{String,Any}}())
+    # processed_args = map(arg -> arg isa OutputRef ? arg.result : arg, args)
+    # wtask = WTask(Task(() -> f(processed_args...), 0), args...)
+    outputref = OutputRef(uuid, Unassigned())
     return quote
-        Job($name, $uuid, $wtask, $outputref)
+        Job($name, $uuid, WTask($f, $args...), $outputref)
     end
 end
+
+function resolve_args!(job::Job)
+    new_args = Any[]
+    for i in eachindex(job.task.args)
+        arg = job.task.args[i]
+        if !(arg isa OutputRef)
+            push!(new_args, arg)
+            continue
+        end
+
+        if arg.result isa Unassigned
+            throw(ArgumentError("Argument $i is not assigned"))
+        end
+
+        push!(new_args, arg.result)
+    end
+    job.task.args = Tuple(new_args)
+    job.task.task = Task(() -> job.task.f(job.task.args...), 0)
+    return job
+end
+
+
+function run!(job::Job)
+    resolve_args!(job)
+    schedule(job.task.task)
+    job.output.result = fetch(job.task.task)
+end
+
+function Base.fetch(job::Job)
+    fetch(job.task.task)
+end
+
+function Base.yield(job::Job)
+    yield(job.task.task)
+end
+
+function Base.istaskstarted(job::Job)
+    istaskstarted(job.task.task)
+end
+
+function Base.istaskdone(job::Job)
+    istaskdone(job.task.task)
+end
+
+function Base.istaskfailed(job::Job)
+    istaskfailed(job.task.task)
+end
+
 
 function is_dag(g::SimpleDiGraph)
     try
@@ -135,38 +187,32 @@ function Flow(jobs::Vector{Job}; traversal::Symbol=:topological)
 end
 
 
+function uuid2job(uuid::UUID, flow::Flow)
+    i = findfirst(job -> job.uuid == uuid, flow.jobs)
+    return flow.jobs[i]
+end
+
+function run!(flow::Flow)
+    for i in flow.graph.nodeorder
+        job = uuid2job(flow.graph.nodemap[i], flow)
+        run!(job)
+    end
+end
 
 function add(x, y)
     x + y
 end
 
-function foo(a::OutputRef, b::OutputRef)
-    a.result + b.result
-end
-
-j1 = Job(add, 1, 2)
-j2 = Job(add, 2, 3)
-j3 = Job(foo, j1.output, j2.output)
-flow = Flow([j1, j2, j3])
-
-g = flow.graph
-graphplot(g.graph; method=:spring)
-map(n -> g.nodemap[n], g.nodeorder)
-
-# check if there is any outputref in the input arguments
-# method_argnames(methods(add)[1])
-
-
-# Flow([j1, j2])
-
-# FIXME
 
 j1 = @job add(1, 2)
 j2 = @job add(2, 3)
 j3 = @job add(j1.output, j2.output)
 j4 = @job add(j3.output, j2.output)
+
 flow = Flow([j1, j2, j3, j4])
 g = flow.graph
 graphplot(g.graph; method=:spring)
 map(n -> g.nodemap[n], g.nodeorder)
 j3.uuid
+
+run!(flow)
