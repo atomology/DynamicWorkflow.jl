@@ -1,10 +1,15 @@
 using UUIDs
 using Base: method_argnames
-using GraphMakie, GLMakie
 using Graphs
+using GraphMakie, GLMakie
+
+
 
 # TODO
-# multi-threading and async job excution
+# 1. implement dynamic scheduling through `response`
+# 2. multi-threading and async job excution
+# 3. add a central database to record all jobs (uuid, name, dir)
+
 
 # similar to OutputReference in Jobflow
 # reference to a result that may or may not exist yet
@@ -58,6 +63,12 @@ macro job(expr)
         Job($name, $uuid, WTask($f, $args...), $outputref)
     end
 end
+function dependencies(job::Job)
+    # this is a naive implementation
+    # filter only the first layer of dependencies
+    # no recursive dependencies
+    return filter(x -> x isa OutputRef, job.task.args)
+end
 
 function resolve_args!(job::Job)
     new_args = Any[]
@@ -106,16 +117,6 @@ function Base.istaskfailed(job::Job)
     istaskfailed(job.task.task)
 end
 
-
-function is_dag(g::SimpleDiGraph)
-    try
-        topological_sort(g)
-    catch
-        return false
-    end
-    return true
-end
-
 struct FlowGraph
     graph::DiGraph
     nodemap::Dict{Int,UUID}
@@ -127,11 +128,29 @@ mutable struct Flow
     graph::FlowGraph
 end
 
-function dependencies(job::Job)
-    # this is a naive implementation
-    # filter only the first layer of dependencies
-    # no recursive dependencies
-    return filter(x -> x isa OutputRef, job.task.args)
+function is_dag(g::SimpleDiGraph)
+    try
+        topological_sort(g)
+    catch
+        return false
+    end
+    return true
+end
+
+function draw_graph(flow::Flow)
+    g = flow.graph.graph
+    labels = map(i -> uuid2job(flow.graph.nodemap[i], flow).name, 1:nv(g))
+    f, ax, p = graphplot(g;
+        ilabels=labels,
+        method=:spring,
+        arrow_size=15,
+        edge_color=:gray,
+    )
+    ax.title = "Flow Graph"
+    hidedecorations!(ax)
+    hidespines!(ax)
+    ax.aspect = DataAspect()
+    return f
 end
 
 # Function to define a flow and resolve dependencies
@@ -203,16 +222,22 @@ function add(x, y)
     x + y
 end
 
-
+# no cycle
 j1 = @job add(1, 2)
 j2 = @job add(2, 3)
 j3 = @job add(j1.output, j2.output)
 j4 = @job add(j3.output, j2.output)
 
-flow = Flow([j1, j2, j3, j4])
-g = flow.graph
-graphplot(g.graph; method=:spring)
-map(n -> g.nodemap[n], g.nodeorder)
-j3.uuid
+flow = Flow([j4, j2, j3, j1])
+draw_graph(flow)
 
 run!(flow)
+j4.output.result
+
+# with cycle
+c1 = @job add(1, 2)
+c2 = @job add(2, c1.output)
+c3 = @job add(3, c2.output)
+# during the workflow somehow you changed the argument of c1
+c1.task.args = (1, c3.output)
+flow = Flow([c1, c2, c3])
