@@ -1,37 +1,41 @@
 module DataDep
 
+using Reexport
 using UUIDs
-using Graphs
+@reexport using Graphs
 using GraphMakie, GLMakie
 using OrderedCollections
 using Base: Threads
 import Base.Threads: @spawn
 
-# TODO
-# 1. implement dynamic scheduling through `response`
-# 2. multi-threading and async job excution
-# 3. add a central database to record all jobs (uuid, name, dir)
-
 
 # similar to OutputReference in Jobflow
-# reference to a result that may or may not exist yet
+# reference to a result that may not exist yet
 mutable struct OutputRef
-    uuid::UUID # same uuid with the associated job
+    # same uuid with the associated job
+    uuid::UUID
     result::Any
 end
+# used as OutputRef.result to indicate unfinished job
 struct Unassigned end
 
 mutable struct WTask
     f::Function
-    task::Task
     args::Tuple
+    task::Task
     function WTask(f, args...)
         @nospecialize f args
-        # set sticky bit to false for multi-threading
-        t = Task(() -> f(args...))
+        # set sticky bit to false by default to allow multi-threading
+        t = Task(() -> invokelatest(f, args...))
         t.sticky = false
-        new(f, t, args)
+        new(f, args, t)
     end
+end
+
+function task(w::WTask)
+    t = Task(()->invokelatest(w.f, w.args...))
+    t.sticky = false
+    return t
 end
 
 mutable struct Job
@@ -43,28 +47,28 @@ end
 
 function Job(f::Function, args...)
     uuid = UUIDs.uuid4()
-    job_name = string(f)
+    name = string(f)
     t = WTask(f, args...)
     outputref = OutputRef(uuid, Unassigned())
-    j = Job(job_name, uuid, t, outputref)
+    j = Job(name, uuid, t, outputref)
     enqueue!(j, Q[])
     return j
 end
 
 # Macro to define jobs
 macro job(expr)
-    name = string(expr.args[1])
     uuid = UUIDs.uuid4()
-    f = eval(expr.args[1])
-    args = map(a -> eval(a), expr.args[2:end])
-    # processed_args = map(arg -> arg isa OutputRef ? arg.result : arg, args)
-    # wtask = WTask(Task(() -> f(processed_args...), 0), args...)
+    name = string(expr.args[1])
+    # evaluate function and arguments in caller scope
+    f = esc(expr.args[1])
+    args = map(a -> esc(a), expr.args[2:end])
     outputref = OutputRef(uuid, Unassigned())
-    job = Job(name, uuid, WTask(f, args...), outputref)
-    job.task.task.sticky = false
-    enqueue!(job, Q[])
     return quote
-        $job
+        eval_args = ($(args...),)
+        parsed_args = map(a->a isa Job ? a.output : a, eval_args)
+        job = Job($name, $uuid, WTask($f, parsed_args...), $outputref)
+        enqueue!(job, Q[])
+        job
     end
 end
 
@@ -76,14 +80,9 @@ function dependencies(job::Job)
 end
 
 struct JobQueue
-    # TODO add jobs to store all jobs and can access job by uuid
-    # jobs::Dict{UUID, Job}
-    # queue::Vector{UUID}
-    # running::Vector{UUID}
-
-    # jobs to run will enqueue
+    # jobs to run
     queue::OrderedDict{UUID, Job}
-    # jobs already running
+    # jobs running
     running::OrderedDict{UUID, Job}
     # the dependency graph of ran jobs
     g::SimpleDiGraph
@@ -91,14 +90,16 @@ struct JobQueue
     node2id::Dict{Int, UUID}
     id2node::Dict{UUID, Int}
     function JobQueue()
-        queue = Dict{UUID, Job}()
-        running = Dict{UUID, Job}()
+        queue = OrderedDict{UUID, Job}()
+        running = OrderedDict{UUID, Job}()
         g = SimpleDiGraph()
         node2id = Dict{Int, UUID}()
         id2node = Dict{UUID, Int}()
         return new(queue, running, g, node2id, id2node)
     end
 end
+
+inqueue(id::UUID, q::JobQueue) = in(id, union(keys(q.queue), keys(q.running)))
 
 function Graphs.add_vertex!(q::JobQueue, uuid::UUID)
     try
@@ -116,30 +117,36 @@ global Q = Ref{JobQueue}()
 Q[] = JobQueue()
 
 # return true if job is runnable
-function resolve_args!(job::Job, q::JobQueue)
+function resolve_args!(job::Job, q::JobQueue)::Union{Nothing, Vector{UUID}}
     @debug "resolving job: $(job.name), id: $(job.uuid)"
     new_args = Any[]
     depends_on = UUID[]
     for i in eachindex(job.task.args)
         arg = job.task.args[i]
-        # for normal variables, we assume they are always accessiable
+        # argument is normal variables
+        # we assume it is always accessiable
         if !(arg isa OutputRef)
             push!(new_args, arg)
             continue
         end
-        # previous Job not finished yet
+        # argument is OutputRef
+        # 1. of a in-queue Job not finished yet, terminate resolving and wait for next main cycle
+        # 2. of a finished Job, then update arg
+        # 3. of a unknown Job, then throw error
         if arg.result isa Unassigned
-            @debug "job will NOT run"
-            return nothing
+            if inqueue(arg.uuid, q)
+                @debug "job arguments not fullfilled, will not run"
+                return nothing
+            else
+                @error "job dependency error!"
+            end
         end
-        # finished kkk, ready to run
+            
         push!(new_args, arg.result)
         push!(depends_on, arg.uuid)
 
     end
     job.task.args = Tuple(new_args)
-    job.task.task = Task(() -> job.task.f(job.task.args...))
-    job.task.task.sticky = false
     return depends_on
 end
 
@@ -159,6 +166,7 @@ function scheduler_main(q::JobQueue, shutdown::Channel{Bool})
                 sleep(1)
                 continue
             end
+            # task submission
             for (uuid, job) in q.queue
                 # TODO how to check DAG?
                 depends_on = resolve_args!(job, q)
@@ -196,9 +204,11 @@ end
 
 
 """
-Non-blocking call to scheudle a Job to run with available threads
+Non-blocking call to force scheudle a Job to run with available threads. 
 """
 function run!(job::Job)
+    # reinitlialize task to 1) update args 2) ignore previous task status
+    job.task.task = task(job.task)
     schedule(job.task.task)
     yield()
 end
@@ -214,6 +224,9 @@ function Base.wait(job::Job)
     end
 end
 
+"""
+Blocking call to wait for and get the result of the job
+"""
 function Base.fetch(job::Job)
     wait(job)
     fetch(job.task.task)
@@ -233,6 +246,22 @@ end
 
 function Base.istaskfailed(job::Job)
     istaskfailed(job.task.task)
+end
+
+function draw_graph(q::JobQueue)
+    g = q.g
+    labels = map(i -> string(q.node2id[i])[end-4:end], 1:nv(g))
+    f, ax, p = graphplot(g;
+        ilabels=labels,
+        method=:spring,
+        arrow_size=15,
+        edge_color=:gray,
+    )
+    ax.title = "Job Graphs"
+    hidedecorations!(ax)
+    hidespines!(ax)
+    ax.aspect = DataAspect()
+    return f
 end
 
 struct FlowGraph
@@ -265,22 +294,6 @@ function draw_graph(flow::Flow)
         edge_color=:gray,
     )
     ax.title = "Flow Graph"
-    hidedecorations!(ax)
-    hidespines!(ax)
-    ax.aspect = DataAspect()
-    return f
-end
-
-function draw_graph(q::JobQueue)
-    g = q.g
-    labels = map(i -> string(q.node2id[i])[end-4:end], 1:nv(g))
-    f, ax, p = graphplot(g;
-        ilabels=labels,
-        method=:spring,
-        arrow_size=15,
-        edge_color=:gray,
-    )
-    ax.title = "Job Graphs"
     hidedecorations!(ax)
     hidespines!(ax)
     ax.aspect = DataAspect()
@@ -354,128 +367,3 @@ end
 
 end # module DataDep
 
-# shutdown = Channel{Bool}(1)  # Single-item shutdown channel
-# t = scheduler_main(Q[], shutdown)
-
-
-# j1 = @job add(1, 2)
-# j2 = @job add(2, 3)
-
-# # no cycle
-# if 
-#     j1 = @job add(1, 2)
-#     j2 = @job add(2, 3)
-# else
-#     j3 = @job func(j1, j2)
-#     j4 = @job add(j3.output, j2.output)
-# end
-# In, Out, InOut
-
-# flow = Flow([j4, j2, j3, j1])
-# draw_graph(flow)
-
-# run!(flow)
-# j4.output.result
-
-# # with cycle
-# c1 = @job add(1, 2)
-# c2 = @job add(2, c1.output)
-# c3 = @job add(3, c2.output)
-# # during the workflow somehow you changed the argument of c1
-# c1.task.args = (1, c3.output)
-# flow = Flow([c1, c2, c3])
-
-
-# function func(job_scf)
-#     wfc_path = get_wfc(job_scf)
-#     new_path = HPCInterface.copy_path(wfc_path, q_points)
-#     for i in 1:q_points
-#         @spawn dfpt(new_path[i])
-#     end
-#     HPCInterface.delete(new_path)
-#     return output
-# end
-
-
-# j1 = @spawn func(job_scf)
-
-# # Job Scheduler
-# j2
-
-# # Native Julia Scheulder
-
-
-
-# function queue_worker(input::Channel, output::Channel, shutdown::Channel{Bool})
-#     @async begin
-#         while true
-#             # Check for shutdown signal
-#             if isready(shutdown)
-#                 println("Worker shutting down")
-#                 close(output)
-#                 break
-#             end
-            
-#             # Process items with timeout
-#             item = try
-#                 timedwait(0.5) do  # Check every 0.5 seconds
-#                     isready(input) || isready(shutdown)
-#                 end
-#                 isready(input) ? take!(input) : nothing
-#             catch e
-#                 println("Error: ", e)
-#                 continue
-#             end
-            
-#             item === nothing && continue
-            
-#             # Process item
-#             start = time()
-#             println("Processing: ", item)
-#             sleep(rand())  # Random processing time
-            
-#             # Send result
-#             put!(output, "Processed $item for $(time() - start)")
-#         end
-#     end
-# end
-
-# # Usage
-# input = Channel{String}(Inf)  # Unlimited buffer
-# output = Channel{String}(10)
-# shutdown = Channel{Bool}(1)  # Single-item shutdown channel
-
-# worker = queue_worker(input, output, shutdown)
-
-# # Producer task
-# @async begin
-#     for i in 1:10
-#         put!(input, "Task $i")
-#     end
-# end
-
-# put!(shutdown, false)  # Signal shutdown
-
-# # Consumer
-# if isopen(output) && isready(output)
-#     for i in 1:10
-#         println("Received: ", take!(output))
-#     end
-# end
-
-
-# d = OrderedDict{Char,Int}()
-# push!(d, 'a' => 1)
-
-
-# for c in 'a':'d'
-#     d[c] = c-'a'+1
-# end
-# for x in d
-#    println(x)
-#    delete!(d, x[1])
-# end
-
-# g = SimpleDiGraph()
-# add_vertex!(g)
-# add_edge!(g, 1, 2)
