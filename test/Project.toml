@@ -1,2 +1,3 @@
 [deps]
+DataDep = "61ab1198-09f6-40be-823d-566e36da65b4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

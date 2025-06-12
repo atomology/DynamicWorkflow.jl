@@ -1,17 +1,26 @@
 using DataDep
-using DataDep: scheduler_main, @job, JobQueue, Q, Job, wait, fetch
-using DataDep: draw_graph
+using DataDep: context, task_args
 using Test
+# using TestItems
+# using TestItemRunner
 
+# @run_package_tests
 
-function add(x, y)
+function add(ctx::JobContext, x, y)
     x + y
 end
 
-@testset "macro" begin
-    shutdown = Channel{Bool}(1)
-    Q[] = JobQueue()
-    t = scheduler_main(Q[], shutdown)
+@testset "scheduler" begin
+    t = start_scheduler()
+    sleep(1)
+    @test isrunning(t)
+    stop_scheduler()
+    sleep(1)
+    @test istaskdone(t)
+end
+
+@testset "basics: job macros" begin
+    t = start_scheduler()
     try
         j1 = @job add(1, 2)
         j2 = @job add(3, 2)
@@ -28,54 +37,73 @@ end
     catch e
         throw(e)
     finally
-        # shutdown scheduler
-        put!(shutdown, true)
+        stop_scheduler()
     end
 end
 
-@testset "scheduler" begin
-    shutdown = Channel{Bool}(1)
-    Q[] = JobQueue()
-    t = scheduler_main(Q[], shutdown)
+# @testset "basics: job function" begin
+#     t = start_scheduler()
+#     try
+#         j1 = Job(add, 1, 2)
+#         j2 = Job(add, 3, 2)
+#         j3 = Job(add, j1.output, j2.output)
+#         @test fetch(j1) == 3
+#         @test fetch(j2) == 5
+#         @test fetch(j3) == 8
+#         # wait for main cycle
+#         sleep(2)
+#         @test length(Q[].queue) == 0
+#         @test length(Q[].running) == 0
+#         @test nv(Q[].g) == 3
+#         @test ne(Q[].g) == 2
+#     catch e
+#         throw(e)
+#     finally
+#         stop_scheduler()
+#     end
+# end
+
+@testset "spawning child jobs" begin
+    t = start_scheduler()
     try
-        j1 = Job(add, 1, 2)
-        j2 = Job(add, 3, 2)
-        j3 = Job(add, j1.output, j2.output)
-        @test fetch(j1) == 3
-        @test fetch(j2) == 5
-        @test fetch(j3) == 8
-        # wait for main cycle
-        sleep(2)
-        @test length(Q[].queue) == 0
-        @test length(Q[].running) == 0
-        @test nv(Q[].g) == 3
-        @test ne(Q[].g) == 2
+        function spawn_jobs(ctx::JobContext, n::Int)
+            jobs = Job[]
+            for i in 1:n
+                j = @job add(ctx, 1, i)
+                # sleep(1)
+                push!(jobs, j)
+            end
+            return jobs
+        end
+
+        w = @job spawn_jobs(3)
+        @test w.uuid == context(w).parent_id
+
+        spawned_jobs = fetch(w)
+        uuids = map(j->j.uuid, spawned_jobs)
+        @test uuids == context(w).child_ids
     catch e
         throw(e)
     finally
-        # shutdown scheduler
-        put!(shutdown, true)
+        stop_scheduler()
     end
 end
-    
 
-@testset "workflow dynamics: for loop and conditional" begin
-    shutdown = Channel{Bool}(1)
-    Q[] = JobQueue()
-    t = scheduler_main(Q[], shutdown)
+@testset "dynamics 1: for loop and conditional" begin
+    t = start_scheduler()
     try
         function workflow()
-            j1 = Job(add, 1, 2)
+            j1 = @job add(1, 2)
             jobs = []
             for i in 1:4
-                push!(jobs, Job(add, j1.output, i))
+                push!(jobs, @job add(j1, i))
             end
             if fetch(jobs[3]) > 4
-                j = Job(add, jobs[1].output, jobs[3].output)
+                j2 = @job add(jobs[1], jobs[3])
             else
-                j = Job(add, jobs[3].out, jobs[4].output)
+                j2 = @job add(jobs[3], jobs[4])
             end
-            return fetch(j)
+            return fetch(j2)
         end
         @test workflow() == 10
         sleep(2)
@@ -86,21 +114,18 @@ end
     catch e
         throw(e)
     finally
-        # shutdown scheduler
-        put!(shutdown, true)
+        stop_scheduler()
     end
 end
 
 
-@testset "workflow dynamics: while loop" begin
-    shutdown = Channel{Bool}(1)
-    Q[] = JobQueue()
-    t = scheduler_main(Q[], shutdown)
+@testset "dynamics 2: while loop" begin
+    t = start_scheduler()
     try
         function workflow()
-            j = Job(add, 1, 1)
+            j = @job add(1, 1)
             while true
-                j = Job(add, j.output, 1)
+                j = @job add(j.output, 1)
                 if fetch(j) > 3
                     break
                 end
@@ -116,7 +141,10 @@ end
     catch e
         throw(e)
     finally
-        # shutdown scheduler
-        put!(shutdown, true)
+        stop_scheduler()
     end
 end
+
+# function get_st()
+#     return stacktrace()
+# end
