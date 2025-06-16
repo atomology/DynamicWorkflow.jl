@@ -24,6 +24,11 @@ end
 # to indicate result 
 struct Unassigned <: AbstractResult end
 
+result(o::OutputRef) = result(o.result)
+result(r::SuccessResult) = r.value
+result(r::FailResult) = r.err
+result(::Unassigned) = Unassigned
+
 """
 $(TYPEDEF)
 A wrapper for a function and its arguments to be run as a task.
@@ -59,16 +64,26 @@ mutable struct Job <: AbstractJob
     output::OutputRef
 end
 
-# TODO FIX same as macro
-# function Job(f::Function, args...)
-#     uuid = UUIDs.uuid4()
-#     name = string(f)
-#     t = WTask(f, args...)
-#     result = OutputRef(uuid, Unassigned())
-#     j = Job(name, uuid, t, result)
-#     enqueue!(j, Q[])
-#     return j
-# end
+result(j::Job) = result(j.output)
+
+function Job(f::Function, args...)
+    @debug "[$(now())] creaing job with function: $f"
+    uuid = UUIDs.uuid4()
+    @debug "uuid $uuid"
+    name = string(f)
+    if isempty(args) || !isa(args[1], JobContext)
+        @debug "no context for job $uuid"
+        args = (JobContext(uuid), args...)
+    else
+        @debug "job context for job $uuid"
+    end
+    args = map(a -> a isa Job ? a.output : a, args)
+    t = WTask(f, args...)
+    result = OutputRef(uuid, Unassigned())
+    j = Job(name, uuid, t, result)
+    enqueue!(j, Q[])
+    return j
+end
 
 """
 $(SIGNATURES)
@@ -78,24 +93,26 @@ the default will be used, and the job will be regarded as a parent job.
 """
 macro job(expr)
     @debug "[$(now())] creaing job with expression: $expr"
-    uuid = UUIDs.uuid4()
-    @debug "[$(now())] uuid $uuid"
     name = string(expr.args[1])
     # evaluate function and arguments in caller scope
     f = esc(expr.args[1])
     args = map(a -> esc(a), expr.args[2:end])
-    output = OutputRef(uuid, Unassigned())
     return quote
+        # macro excute when code is parsed, therefore
+        # UUID generation needs to be in caller scope
+        # otherwise will be the same in one macroexpansion
+        uuid = UUIDs.uuid4()
+        output = OutputRef(uuid, Unassigned())
         eval_args = ($(args...),)
         parsed_args = map(a -> a isa Job ? a.output : a, eval_args)
         # can call func without ctx
         if isempty(parsed_args) || !isa(parsed_args[1], JobContext)
-            @debug "no context for job $($uuid)"
-            parsed_args = (JobContext($uuid), parsed_args...)
+            @debug "no context for job $(uuid)"
+            parsed_args = (JobContext(uuid), parsed_args...)
         else
-            @debug "[$(now())] job context for job $($uuid)"
+            @debug " job context for job $(uuid)"
         end
-        job = Job($name, $uuid, WTask($f, parsed_args...), $output)
+        job = Job($name, uuid, WTask($f, parsed_args...), output)
         enqueue!(job, Q[])
         job
     end
@@ -226,7 +243,7 @@ function resolve_args!(job::Job, q::JobQueue)::Union{Nothing,Vector{UUID}}
         end
     end
     pushfirst!(new_args, ctx)
-    @debug "resolve arguments: $new_args"
+    @debug "resolved arguments: $new_args"
     job.task.args = Tuple(new_args)
     return depends_on
 end
@@ -252,7 +269,7 @@ function dequeue!(job::Job, q::JobQueue)
 end
 
 
-function scheduler_main(q::JobQueue, shutdown::Channel{Bool}; sleep_time=1)
+function scheduler_main(q::JobQueue, shutdown::Channel{Bool}; sleep_time=0.01)
     @async begin
         while true
             if isready(shutdown)

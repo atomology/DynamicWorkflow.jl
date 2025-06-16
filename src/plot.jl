@@ -13,3 +13,5 @@ function draw_graph(q::JobQueue)
     ax.aspect = DataAspect()
     return f
 end
+
+draw_graph() = draw_graph(Q[])
