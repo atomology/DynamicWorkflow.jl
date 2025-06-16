@@ -64,9 +64,15 @@ function t2()
     return fetch(j)
 end
 
-jt1 = Job(t1)
-jt2 = Job(t2)
-j3 = Job(add, jt1.output, jt2.output)
+t1 = @flow begin
+    j1 = @job xxx
+    j2 = @job xxx
+end
+
+
+j1 = Job(t1)
+j2 = Job(t2)
+j3 = Job(add, j1.output, j2.output)
 
 @test fetch(j3) == 14
 
