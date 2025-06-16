@@ -1,3 +1,8 @@
+using OrderedCollections: OrderedSet
+
+export Job, @job, Unassigned, SuccessResult, FailResult, JobContext, JobState
+export result, start_scheduler, stop_scheduler, allcomplete, cancel!, status, istasksuccess, isqueuealive
+
 abstract type AbstractJob end
 abstract type AbstractResult end
 
@@ -52,6 +57,14 @@ function task(w::WTask)
     return t
 end
 
+@enum JobState begin
+    PENDING
+    RUNNING
+    COMPLETED
+    FAILED
+    CANCELLED
+end
+
 """
 $(TYPEDEF)
 A job that can be scheduled and run. The uuid is used to identify the job
@@ -62,9 +75,11 @@ mutable struct Job <: AbstractJob
     uuid::UUID
     task::WTask
     output::OutputRef
+    status::JobState
 end
 
 result(j::Job) = result(j.output)
+status(j::Job) = j.status
 
 function Job(f::Function, args...)
     @debug "[$(now())] creaing job with function: $f"
@@ -80,7 +95,7 @@ function Job(f::Function, args...)
     args = map(a -> a isa Job ? a.output : a, args)
     t = WTask(f, args...)
     result = OutputRef(uuid, Unassigned())
-    j = Job(name, uuid, t, result)
+    j = Job(name, uuid, t, result, PENDING)
     enqueue!(j, Q[])
     return j
 end
@@ -112,7 +127,7 @@ macro job(expr)
         else
             @debug " job context for job $(uuid)"
         end
-        job = Job($name, uuid, WTask($f, parsed_args...), output)
+        job = Job($name, uuid, WTask($f, parsed_args...), output, PENDING)
         enqueue!(job, Q[])
         job
     end
@@ -152,42 +167,90 @@ $(TYPEDEF)
 A queue for jobs to be scheduled and run. Only one global instance of `JobQueue` should exist
 and is created by `start_scheduler`.
 """
-struct JobQueue
+mutable struct JobQueue
+    # all jobs
+    jobs::Dict{UUID, Job}
     # jobs to run
-    queue::OrderedDict{UUID, Job}
+    pending::OrderedSet{UUID}
     # jobs running
-    # TODO change to set of UUIDs
-    running_jobs::OrderedDict{UUID,Job}
+    running::OrderedSet{UUID}
     # jobs ran (with only outputs)
-    completed_jobs::OrderedDict{UUID,Job}
+    completed::OrderedSet{UUID}
     # the dependency graph of ran jobs
     g::SimpleDiGraph
     # mapping between graph node id and job uuid
     node2id::Dict{Int,UUID}
     id2node::Dict{UUID,Int}
+    lock::ReentrantLock
+    mainloop::Union{Nothing, Task}
     function JobQueue()
-        queue = OrderedDict{UUID,Job}()
-        running = OrderedDict{UUID,Job}()
-        ran = OrderedDict{UUID,Job}()
+        jobs = Dict{UUID, Job}()
+        pending = OrderedSet{UUID}()
+        running = OrderedSet{UUID}()
+        completed = OrderedSet{UUID}()
         g = SimpleDiGraph()
         node2id = Dict{Int,UUID}()
         id2node = Dict{UUID,Int}()
-        return new(queue, running, ran, g, node2id, id2node)
+        return new(jobs, pending, running, completed, g, node2id, id2node, ReentrantLock(), nothing)
     end
 end
 
-isinqueue(id::UUID, q::JobQueue) = in(id, union(keys(q.queue), keys(q.running_jobs)))
-isfinished(q::JobQueue) = isempty(q.queue) && isempty(q.running_jobs)
-
-# can directly access the global queue by Q[]
+# the global queue running on main processes
 global Q = Ref{JobQueue}()
 global SHUTDOWN = Ref{Channel{Bool}}()
+
+inqueue(job::Job, q::JobQueue) = in(job.uuid, keys(q.jobs))
+inqueue(job::Job) = inqueue(job.uuid, Q[])
+allcomplete(q::JobQueue) = isempty(q.pending) && isempty(q.running)
+allcomplete() = allcomplete(Q[])
+iscompleted(j::Job, q::JobQueue) = in(j.uuid, q.completed)
+iscompleted(j::Job) = iscompleted(j, Q[].completed)
+isqueuealive(q::JobQueue) = !istaskdone(q.mainloop)
+isqueuealive() = isqueuealive(Q[])
+
+function enqueue!(job::Job, q::JobQueue)
+    lock(q.lock) do
+        push!(q.jobs, job.uuid => job)
+        push!(q.pending, job.uuid)
+        job.status = PENDING
+    end
+end
+
+"""
+$(SIGNATURES)
+Try to cancel a job from running.
+"""
+function cancel!(job::Job, q::JobQueue)
+    if !inqueue(job, q)
+        @info "job $(job.uuid) is not in JobQueue"
+        return
+    end
+
+    if job.status != PENDING
+        @error "Job $(job.uuid) status: $(status(job)), cannot cancel."
+        return
+    end
+
+    id = job.uuid
+    if in(id, q.pending)
+        lock(q.lock) do
+            delete!(q.pending, job.uuid)
+            delete!(q.jobs, job.uuid)
+            job.status = CANCELLED
+        end
+    else
+        @error "Job $(job.uuid) status unknown!"
+    end
+end
+cancel!(job::Job) = cancel!(job, Q[])
 
 function start_scheduler()
     @info "Starting JobScheduler..."
     Q[] = JobQueue()
     SHUTDOWN[] = Channel{Bool}(1)
-    return scheduler_main(Q[], SHUTDOWN[])
+    t = scheduler_main(Q[], SHUTDOWN[])
+    Q[].mainloop = t
+    return t
 end
 
 function stop_scheduler()
@@ -228,16 +291,12 @@ function resolve_args!(job::Job, q::JobQueue)::Union{Nothing,Vector{UUID}}
 
         if arg.result isa Unassigned
             @debug "job $(job.uuid) dependencies not fullfilled, will not run!"
-            return nothing
-            # if isinqueue(arg.uuid, q)
-            #     return nothing
-            # else
-            #     @error "job dependency error!"
-            # end
+            return
         elseif arg.result isa SuccessResult
-            push!(new_args, arg.result.value)
+            push!(new_args, result(arg))
             push!(depends_on, arg.uuid)
         else
+            # FailedResult
             # TODO error propogation
             @error "job $(job.uuid) dependencies errored, stop queue!"
         end
@@ -248,75 +307,48 @@ function resolve_args!(job::Job, q::JobQueue)::Union{Nothing,Vector{UUID}}
     return depends_on
 end
 
-function enqueue!(job::Job, q::JobQueue)
-    push!(q.queue, job.uuid => job)
-end
-
-"""
-$(SIGNATURES)
-Try to dequeue a job from the JobQueue.
-"""
-function dequeue!(job::Job, q::JobQueue)
-    if in(job.uuid, keys(q.queue))
-        return delete!(q.queue, job.uuid)
-    elseif in(job.uuid, keys(q.running_jobs))
-        @error "Job $(job.name) (id: $(job.uuid)) is running, cannot dequeue!"
-    elseif in(job.uuid, keys(q.completed_jobs))
-        @error "Job $(job.name) (id: $(job.uuid)) is already ran, cannot dequeue!"
-    else
-        @error "Job $(job.name) (id: $(job.uuid)) not found in queue!"
-    end
-end
-
-
 function scheduler_main(q::JobQueue, shutdown::Channel{Bool}; sleep_time=0.01)
-    @async begin
+    t = @async begin
         while true
             if isready(shutdown)
-                @info "JobScheduler shutting down!"
+                @info "JobScheduler shut down!"
                 break
             end
-            if isempty(q.queue) && isempty(q.running_jobs)
+            if allcomplete(q)
                 sleep(sleep_time)
                 continue
             end
             # task submission
-            for (uuid, job) in q.queue
+            for uuid in q.pending
+                job = q.jobs[uuid]
                 # TODO how to check DAG?
                 depends_on = resolve_args!(job, q)
                 # dependencies not fully fullyfilled
                 if depends_on === nothing
                     continue
                 end
-                # update queue and graph
-                delete!(q.queue, uuid)
-                push!(q.running_jobs, uuid => job)
-                # update dependency graph
-                add_vertex!(q, uuid)
-                for id in depends_on
-                    add_edge!(q.g, q.id2node[id], q.id2node[job.uuid])
-                end
-                # push current job to parent job's context
-                ctx = context(job)
-                if ctx.parent_id != uuid
-                    push!(ctx.child_ids, uuid)
-                    add_edge!(q.g, q.id2node[ctx.parent_id], q.id2node[job.uuid])
-                end
-                @debug "Running job: $(job.name), uuid: $(job.uuid)"
-                run!(job)
+                # job ready to run
+                execute_job!(q, uuid, depends_on)
             end
             # check results
-            for (uuid, job) in q.running_jobs
-                if istaskdone(job)
+            for uuid in q.running
+                job = q.jobs[uuid]
+                if istasksuccess(job)
                     # only place to write output, so no lock needed
-                    job.output.result = SuccessResult(fetch(job.task.task))
-                    delete!(q.running_jobs, uuid)
-                    push!(q.completed_jobs, uuid => job)
+                    job.status = COMPLETED
+                    job.output.result = SuccessResult(fetch(job))
+                    lock(q.lock) do
+                        delete!(q.running, uuid)
+                        push!(q.completed, uuid)
+                    end
                 elseif istaskfailed(job)
-                    job.output.result = FailResult(fetch(job.task.task))
                     @warn "Failed job: $(job.name) (id: $(job.uuid))"
-                    delete!(q.running_jobs, uuid)
-                    push!(q.completed_jobs, uuid => job)
+                    job.status = FAILED
+                    job.output.result = FailResult(fetch(job))
+                    lock(q.lock) do
+                        delete!(q.running, uuid)
+                        push!(q.completed, uuid)
+                    end
                     # error_handle(job)
                 end
             end
@@ -324,8 +356,40 @@ function scheduler_main(q::JobQueue, shutdown::Channel{Bool}; sleep_time=0.01)
             sleep(sleep_time)
         end
     end
+    return t
 end
 
+function execute_job!(q::JobQueue, uuid::UUID, depends_on)
+    job = q.jobs[uuid]
+    try
+        lock(q.lock) do
+            delete!(q.pending, uuid)
+            push!(q.running, uuid)
+            job.status = RUNNING
+            add_vertex!(q, uuid)
+            # update dependency graph
+            for id in depends_on
+                add_edge!(q.g, q.id2node[id], q.id2node[job.uuid])
+            end
+            # push current job to parent job's context
+            ctx = context(job)
+            if ctx.parent_id != uuid
+                push!(ctx.child_ids, uuid)
+                add_edge!(q.g, q.id2node[ctx.parent_id], q.id2node[job.uuid])
+            end
+        end
+        @debug "Running job: $(job.name), uuid: $(job.uuid)"
+        run!(job)
+    catch e
+        job.status = FAILED
+        job.output.result = FailResult(e)
+        @warn "Failed job: $(job.name) (id: $(job.uuid))"
+        lock(q.lock) do
+            delete!(q.running, uuid)
+            push!(q.completed, uuid)
+        end
+    end
+end
 
 """
 Non-blocking call to force scheudle a Job to run with available threads. 
@@ -336,6 +400,7 @@ function run!(job::Job)
     schedule(job.task.task)
     yield()
 end
+        
 
 function Base.wait(job::Job)
     while true
@@ -352,8 +417,12 @@ end
 Blocking call to wait for and get the result of the job
 """
 function Base.fetch(job::Job)
-    wait(job)
-    fetch(job.task.task)
+    try
+        wait(job)
+        fetch(job.task.task)
+    catch
+        return job.task.task.result
+    end
 end
 
 function Base.yield(job::Job)
@@ -372,5 +441,5 @@ function Base.istaskfailed(job::Job)
     istaskfailed(job.task.task)
 end
 
-
+istasksuccess(job::Job) = istaskdone(job) && !istaskfailed(job)
 
