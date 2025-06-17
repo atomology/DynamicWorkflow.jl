@@ -1,6 +1,6 @@
-name = "DataDep"
+name = "DynamicWorkflow"
 uuid = "61ab1198-09f6-40be-823d-566e36da65b4"
-authors = ["Guoyuan Liu <liuguoyuan01@outlook.com>", "and contributors"]
+authors = ["Guoyuan Liu <liuguoyuan01@outlook.com>", "Junfeng Qiao", "Aleksandr Poliukhin"]
 version = "0.1.0"
 
 [deps]
