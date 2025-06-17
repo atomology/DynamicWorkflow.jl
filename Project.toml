@@ -22,3 +22,6 @@ Makie = "0.22.10"
 NetworkLayout = "0.4.10"
 Printf = "1.11.0"
 Reexport = "1.2.2"
+
+[extras]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"

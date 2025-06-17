@@ -7,26 +7,35 @@ abstract type AbstractJob end
 abstract type AbstractResult end
 
 """
-$(TYPEDEF)
 Placeholder for a job result that may not exist yet (like Future). The UUID is the same as the associated job.
-"""
 
+Fields
+$(FIELDS)
+"""
 mutable struct OutputRef
     uuid::UUID
     result::AbstractResult
 end
 
+"""
+$(TYPEDEF)
+"""
 struct SuccessResult <: AbstractResult
     # same uuid with the associated job
     value::Any
 end
 
+"""
+$(TYPEDEF)
+"""
 struct FailResult <: AbstractResult
     # same uuid with the associated job
     err::Any
 end
 
-# to indicate result 
+"""
+$(TYPEDEF)
+"""
 struct Unassigned <: AbstractResult end
 
 result(o::OutputRef) = result(o.result)
@@ -35,8 +44,10 @@ result(r::FailResult) = r.err
 result(::Unassigned) = Unassigned
 
 """
-$(TYPEDEF)
 A wrapper for a function and its arguments to be run as a task.
+
+# Fields
+$(FIELDS)
 """
 mutable struct WTask
     f::Function
@@ -57,6 +68,10 @@ function task(w::WTask)
     return t
 end
 
+"""
+$(FIELDS)
+One of the following states a job can be in: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED.
+"""
 @enum JobState begin
     PENDING
     RUNNING
@@ -66,9 +81,11 @@ end
 end
 
 """
-$(TYPEDEF)
 A job that can be scheduled and run. The uuid is used to identify the job
 and the result.
+
+Fields
+$(FIELDS)
 """
 mutable struct Job <: AbstractJob
     name::String
@@ -77,9 +94,6 @@ mutable struct Job <: AbstractJob
     output::OutputRef
     status::JobState
 end
-
-result(j::Job) = result(j.output)
-status(j::Job) = j.status
 
 function Job(f::Function, args...)
     @debug "[$(now())] creaing job with function: $f"
@@ -105,6 +119,13 @@ $(SIGNATURES)
 Wrap a function and create a job which will be enqueued immediately to the global JobQueue.
 The first argument of the function must be of type `JobContext`. When calling without a `ctx`,
 the default will be used, and the job will be regarded as a parent job. 
+
+# Examples
+```julia
+j1 = @job my_add(1, 2)
+j2 = @job my_add(3, 2)
+j3 = @job my_add(j1, j2)  # j3 depends on j1 and j2
+```
 """
 macro job(expr)
     @debug "[$(now())] creaing job with expression: $expr"
@@ -133,6 +154,43 @@ macro job(expr)
     end
 end
 
+
+"""
+    status(job::Job)
+
+Return one of the [`JobState`](@ref) enum values.
+"""
+function status(job::Job)
+    job.status
+end
+
+"""
+    result(job::Job)
+
+Get the result of a job without blocking.
+
+# Returns
+The job's result or [`Unassigned`](@ref) if not ready
+"""
+function result(job::Job)
+    result(job.output)
+end
+
+"""
+    fetch(job::Job)
+
+Get the result of a job, blocking until the job is completed.
+"""
+function fetch(job::Job)
+    try
+        wait(job)
+        fetch(job.task.task)
+    catch
+        return job.task.task.result
+    end
+end
+
+
 function task_args(j::Job)
     if !isempty(j.task.args)
         return j.task.args[2:end]
@@ -142,8 +200,10 @@ function task_args(j::Job)
 end
 
 """
-$(TYPEDEF)
-Help to build the dependency graph
+Help to build the dependency graph.
+
+Fields
+$(FIELDS)
 """
 mutable struct JobContext
     parent_id::UUID
@@ -163,13 +223,15 @@ end
 
 
 """
-$(TYPEDEF)
 A queue for jobs to be scheduled and run. Only one global instance of `JobQueue` should exist
 and is created by `start_scheduler`.
+
+# Fields
+$(FIELDS)
 """
 mutable struct JobQueue
     # all jobs
-    jobs::Dict{UUID, Job}
+    jobs::Dict{UUID,Job}
     # jobs to run
     pending::OrderedSet{UUID}
     # jobs running
@@ -182,9 +244,9 @@ mutable struct JobQueue
     node2id::Dict{Int,UUID}
     id2node::Dict{UUID,Int}
     lock::ReentrantLock
-    mainloop::Union{Nothing, Task}
+    mainloop::Union{Nothing,Task}
     function JobQueue()
-        jobs = Dict{UUID, Job}()
+        jobs = Dict{UUID,Job}()
         pending = OrderedSet{UUID}()
         running = OrderedSet{UUID}()
         completed = OrderedSet{UUID}()
@@ -201,12 +263,17 @@ global SHUTDOWN = Ref{Channel{Bool}}()
 
 inqueue(job::Job, q::JobQueue) = in(job.uuid, keys(q.jobs))
 inqueue(job::Job) = inqueue(job.uuid, Q[])
-allcomplete(q::JobQueue) = isempty(q.pending) && isempty(q.running)
-allcomplete() = allcomplete(Q[])
 iscompleted(j::Job, q::JobQueue) = in(j.uuid, q.completed)
 iscompleted(j::Job) = iscompleted(j, Q[].completed)
 isqueuealive(q::JobQueue) = !istaskdone(q.mainloop)
 isqueuealive() = isqueuealive(Q[])
+"""
+    allcomplete()
+
+Check if all jobs in the scheduler are completed.
+"""
+allcomplete(q::JobQueue) = isempty(q.pending) && isempty(q.running)
+allcomplete() = allcomplete(Q[])
 
 function enqueue!(job::Job, q::JobQueue)
     lock(q.lock) do
@@ -219,31 +286,41 @@ end
 """
 $(SIGNATURES)
 Try to cancel a job from running.
+
+# Returns
+`true` if the job was successfully cancelled, `false` otherwise
 """
-function cancel!(job::Job, q::JobQueue)
-    if !inqueue(job, q)
+function cancel!(job::Job, queue::JobQueue)
+    if !inqueue(job, queue)
         @info "job $(job.uuid) is not in JobQueue"
-        return
+        return false
     end
 
     if job.status != PENDING
-        @error "Job $(job.uuid) status: $(status(job)), cannot cancel."
-        return
+        @warn "Job $(job.uuid) status: $(status(job)), cannot cancel."
+        return false
     end
 
     id = job.uuid
-    if in(id, q.pending)
-        lock(q.lock) do
-            delete!(q.pending, job.uuid)
-            delete!(q.jobs, job.uuid)
+    if in(id, queue.pending)
+        lock(queue.lock) do
+            delete!(queue.pending, job.uuid)
+            delete!(queue.jobs, job.uuid)
             job.status = CANCELLED
         end
+        return true
     else
-        @error "Job $(job.uuid) status unknown!"
+        @warn "Job $(job.uuid) status unknown!"
+        return false
     end
 end
 cancel!(job::Job) = cancel!(job, Q[])
 
+"""
+$(SIGNATURES)
+
+The scheduler task can be accessed by `Q[].mainloop`.
+"""
 function start_scheduler()
     @info "Starting JobScheduler..."
     Q[] = JobQueue()
@@ -253,6 +330,11 @@ function start_scheduler()
     return t
 end
 
+"""
+$(SIGNATURES)
+
+Stop the scheduler task.
+"""
 function stop_scheduler()
     @info "Stopping JobScheduler..."
     put!(SHUTDOWN[], true)
@@ -262,7 +344,6 @@ function stop_scheduler(shutdown::Channel{Bool})
     @info "Stopping JobScheduler..."
     put!(shutdown, true)
 end
-
 
 function Graphs.add_vertex!(q::JobQueue, uuid::UUID)
     try
@@ -392,7 +473,7 @@ function execute_job!(q::JobQueue, uuid::UUID, depends_on)
 end
 
 """
-Non-blocking call to force scheudle a Job to run with available threads. 
+Non-blocking call to scheudle a Job to run with available threads. 
 """
 function run!(job::Job)
     # reinitlialize task to update args and ignore previous task status
@@ -400,7 +481,7 @@ function run!(job::Job)
     schedule(job.task.task)
     yield()
 end
-        
+
 
 function Base.wait(job::Job)
     while true
@@ -410,18 +491,6 @@ function Base.wait(job::Job)
         # TODO why we need yield here?
         # shouldn't fetch has implicit yielding???
         yield()
-    end
-end
-
-"""
-Blocking call to wait for and get the result of the job
-"""
-function Base.fetch(job::Job)
-    try
-        wait(job)
-        fetch(job.task.task)
-    catch
-        return job.task.task.result
     end
 end
 
@@ -442,4 +511,3 @@ function Base.istaskfailed(job::Job)
 end
 
 istasksuccess(job::Job) = istaskdone(job) && !istaskfailed(job)
-

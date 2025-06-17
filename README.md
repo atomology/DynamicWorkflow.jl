@@ -1,33 +1,57 @@
 # DynamicWorkflow.jl
 
-**A flexible, lighweight scheduler for dynamic workflows.**
+**A flexible, lightweight scheduler for dynamic workflows in Julia.**
+
+DynamicWorkflow.jl provides a powerful and intuitive way to create and manage dynamic workflows in Julia. It allows you to wrap functions into jobs, manage dependencies between them, and execute them efficiently using Julia's threading capabilities.
+
+## Installation
+
+```julia
+using Pkg
+Pkg.add("DynamicWorkflow")
+```
 
 ## Features
 
-1. Wrap (almost) any functions into a `Job` and schedule to run on available threads.
-2. Easy dependency resolving, just use `Job` as the arguments.
-3. Write workflow using native Julia control statements, i.e. `while`, `if`, `for`.
-4. Create new jobs from within a job.
+1. **Job Management**
+   - Wrap any function into a `Job` for scheduling
+   - Automatic dependency resolution between jobs
+   - Support for dynamic job creation during execution
+   - Job status tracking and result management
 
-## Examples
+2. **Flexible Workflow Creation**
+   - Use native Julia control flow (`while`, `if`, `for`)
+   - Create new jobs from within existing jobs
+   - Build complex dependency graphs automatically
 
-Define your job in a function, which ideally should be [pure](https://en.wikipedia.org/wiki/Pure_function#:~:text=In%20computer%20programming%2C%20a%20pure,i.e.%2C%20referential%20transparency)%2C%20and).
-The first argument should always be of type `JobContext`.
-```jl
+
+## Quick Start
+
+```julia
+using DynamicWorkflow
+
+# Define a job function
 function my_add(ctx::JobContext, x, y)
     x + y
 end
-```
 
-Start job scheduler.
-```jl
+# Start the scheduler
 start_scheduler()
-```
 
-Create and immediately enqueue the job by using `@job` macro.
-```jl
+# Create and schedule jobs
 j1 = @job my_add(1, 2)
 j2 = @job my_add(3, 2)
+j3 = @job my_add(j1, j2)  # j3 depends on j1 and j2
+
+# Monitor and get results
+status(j3)  # Check job status
+fetch(j3)   # Get result (blocking)
+result(j3)  # Get result (non-blocking)
+
+# Visualize the workflow
+using GLMakie
+draw_graph()
+stop_scheduler() # exit scheulder
 ```
 
 You can directly use jobs with corresponding outputs as arguments to build workflows.
@@ -35,20 +59,12 @@ You can directly use jobs with corresponding outputs as arguments to build workf
 j3 = @job my_add(j1, j2)
 ```
 
-Monitor jobs and fetch results.
-```jl
-status(j3) # one of PENDING, RUNNING, CANCELLED, COMPLETED, FAILED
-fetch(j3)  # blocking call to get result
-result(j3) # non-blocking, the result may not be ready, in which case Unassigned will be returned.
-```
+See the `examples/` directory for more detailed examples of using DynamicWorkflow.jl.
 
-Monitor the whole workflow.
-```jl
-allcomplete()  # return true if no more jobs pending and all jobs completed
 
-using GLMakie
-draw_graph()   # draw the dependency graph using one of the Makies.jl backends.
-```
+## License
+
+This project is licensed under the GNU v3 License.
 
 
 
