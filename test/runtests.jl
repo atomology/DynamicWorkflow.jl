@@ -21,6 +21,11 @@ function bad_job(ctx::JobContext)
     return a[1]
 end
 
+@testset "initialization" begin
+    @test !isqueuealive()
+    @test !allcomplete()
+end
+
 @testset "scheduler" begin
     start_scheduler()
     sleep(1)

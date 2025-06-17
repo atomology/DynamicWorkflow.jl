@@ -99,6 +99,9 @@ function Job(f::Function, args...)
     @debug "[$(now())] creaing job with function: $f"
     uuid = UUIDs.uuid4()
     @debug "uuid $uuid"
+    if !isassigned(Q)
+        throw("JobQueue not initilized. Use start_scheduler().")
+    end
     name = string(f)
     if isempty(args) || !isa(args[1], JobContext)
         @debug "no context for job $uuid"
@@ -134,6 +137,9 @@ macro job(expr)
     f = esc(expr.args[1])
     args = map(a -> esc(a), expr.args[2:end])
     return quote
+        if !isassigned(Q)
+            throw("JobQueue not initilized. Use start_scheduler().")
+        end
         # macro excute when code is parsed, therefore
         # UUID generation needs to be in caller scope
         # otherwise will be the same in one macroexpansion
@@ -262,18 +268,18 @@ global Q = Ref{JobQueue}()
 global SHUTDOWN = Ref{Channel{Bool}}()
 
 inqueue(job::Job, q::JobQueue) = in(job.uuid, keys(q.jobs))
-inqueue(job::Job) = inqueue(job.uuid, Q[])
+inqueue(job::Job) = isassigned(Q) && inqueue(job.uuid, Q[])
 iscompleted(j::Job, q::JobQueue) = in(j.uuid, q.completed)
-iscompleted(j::Job) = iscompleted(j, Q[].completed)
+iscompleted(j::Job) = isassigned(Q) && iscompleted(j, Q[].completed)
 isqueuealive(q::JobQueue) = !istaskdone(q.mainloop)
-isqueuealive() = isqueuealive(Q[])
+isqueuealive() = isassigned(Q) && isqueuealive(Q[])
 """
     allcomplete()
 
 Check if all jobs in the scheduler are completed.
 """
 allcomplete(q::JobQueue) = isempty(q.pending) && isempty(q.running)
-allcomplete() = allcomplete(Q[])
+allcomplete() = isassigned(Q) && allcomplete(Q[])
 
 function enqueue!(job::Job, q::JobQueue)
     lock(q.lock) do
@@ -339,15 +345,16 @@ $(SIGNATURES)
 
 Stop the scheduler task.
 """
-function stop_scheduler()
-    @info "Stopping JobScheduler..."
-    put!(SHUTDOWN[], true)
-end
-
 function stop_scheduler(shutdown::Channel{Bool})
-    @info "Stopping JobScheduler..."
+    if !isqueuealive()
+        @info "Job scheduler already stopped."
+        return
+    end
+    @info "Stopping job scheduler..."
     put!(shutdown, true)
+    wait(Q[].mainloop)
 end
+stop_scheduler() = stop_scheduler(SHUTDOWN[])
 
 function Graphs.add_vertex!(q::JobQueue, uuid::UUID)
     try
