@@ -1,7 +1,7 @@
 using OrderedCollections: OrderedSet
 
 export Job, @job, Unassigned, SuccessResult, FailResult, JobContext, JobState
-export result, start_scheduler, stop_scheduler, allcomplete, cancel!, status, istasksuccess, isqueuealive
+export fetch, result, start_scheduler, stop_scheduler, allcomplete, cancel!, status, istasksuccess, isqueuealive
 
 abstract type AbstractJob end
 abstract type AbstractResult end
@@ -181,10 +181,10 @@ end
 
 Get the result of a job, blocking until the job is completed.
 """
-function fetch(job::Job)
+function Base.fetch(job::Job)
     try
         wait(job)
-        fetch(job.task.task)
+        return fetch(job.task.task)
     catch
         return job.task.task.result
     end
@@ -323,6 +323,10 @@ The scheduler task can be accessed by `Q[].mainloop`.
 """
 function start_scheduler()
     @info "Starting JobScheduler..."
+    if isassigned(Q) && !istaskdone(Q[].mainloop)
+        @warn "Scheduler is already running!"
+        return nothing
+    end
     Q[] = JobQueue()
     SHUTDOWN[] = Channel{Bool}(1)
     t = scheduler_main(Q[], SHUTDOWN[])
@@ -491,6 +495,14 @@ function Base.wait(job::Job)
         # TODO why we need yield here?
         # shouldn't fetch has implicit yielding???
         yield()
+    end
+end
+
+function Base.wait(jobs::AbstractVector{Job})
+    while true
+        if all([istaskdone(j) for j in jobs])
+            break
+        end
     end
 end
 

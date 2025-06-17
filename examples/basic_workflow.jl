@@ -21,8 +21,8 @@ j2 = @job add(4, 5)
 j3 = @job multiply(j1, j2)
 
 # Wait for completion and get result
-result = fetch(j3)
-println("Final result: ", result)
+r = fetch(j3)
+println("Final result: ", r)
 
 # Visualize the workflow
 draw_graph()
