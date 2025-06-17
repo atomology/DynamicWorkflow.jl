@@ -1,6 +1,6 @@
-using DataDep
-using DataDep: context, Q
-using DataDep: PENDING, RUNNING, CANCELLED, COMPLETED, FAILED
+using DynamicWorkflow
+using DynamicWorkflow: context, Q
+using DynamicWorkflow: PENDING, RUNNING, CANCELLED, COMPLETED, FAILED
 using Test
 # using TestItems
 # using TestItemRunner
@@ -120,6 +120,8 @@ end
 
         w = @job spawn_jobs()
         jobs = fetch(w)
+        # FIXME
+        sleep(1)
 
         uuids = map(j->j.uuid, jobs)
         @test w.uuid == context(w).parent_id

@@ -1,4 +1,4 @@
-module DataDep
+module DynamicWorkflow
 
 using Reexport
 using DocStringExtensions
@@ -12,5 +12,5 @@ include("scheduler.jl")
 
 include("plot.jl")
 
-end # module DataDep
+end # module DynamicWorkflow
 
