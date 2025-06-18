@@ -1,6 +1,6 @@
 using OrderedCollections: OrderedSet
 
-export Job, @job, Unassigned, SuccessResult, FailResult, JobContext, JobState
+export Job, @job, Unassigned, SuccessResult, FailResult, JobState, JobContext
 export fetch, result, start_scheduler, stop_scheduler, allcomplete, cancel!, status, istasksuccess, isqueuealive
 
 abstract type AbstractJob end
@@ -107,7 +107,10 @@ function Job(f::Function, args...)
         @debug "no context for job $uuid"
         args = (JobContext(uuid), args...)
     else
-        @debug "job context for job $uuid"
+        @debug "job context passed for job $uuid"
+        parent_ctx = args[1]
+        push!(parent_ctx.child_ids, uuid)
+        args = (JobContext(uuid, parent_ctx.curr_id, UUID[]), args[2:end]...)
     end
     args = map(a -> a isa Job ? a.output : a, args)
     t = WTask(f, args...)
@@ -152,7 +155,10 @@ macro job(expr)
             @debug "no context for job $(uuid)"
             parsed_args = (JobContext(uuid), parsed_args...)
         else
-            @debug " job context for job $(uuid)"
+            @debug "job context passed for job $uuid"
+            parent_ctx = parsed_args[1]
+            push!(parent_ctx.child_ids, uuid)
+            parsed_args = (JobContext(uuid, parent_ctx.curr_id, UUID[]), parsed_args[2:end]...)
         end
         job = Job($name, uuid, WTask($f, parsed_args...), output, PENDING)
         enqueue!(job, Q[])
@@ -212,11 +218,11 @@ Fields
 $(FIELDS)
 """
 mutable struct JobContext
-    parent_id::UUID
+    curr_id::UUID
+    parent_id::Union{Nothing, UUID}
     child_ids::Vector{UUID}
-
-    JobContext(parent_id) = new(parent_id, UUID[])
 end
+JobContext(curr_id) = JobContext(curr_id, nothing, UUID[])
 
 context(j::Job) = j.task.args[1]
 
@@ -463,10 +469,11 @@ function execute_job!(q::JobQueue, uuid::UUID, depends_on)
             for id in depends_on
                 add_edge!(q.g, q.id2node[id], q.id2node[job.uuid])
             end
-            # push current job to parent job's context
+            # context records the job dependency
+            # child_ids are not used now
             ctx = context(job)
-            if ctx.parent_id != uuid
-                push!(ctx.child_ids, uuid)
+            @assert ctx.curr_id == uuid
+            if !isnothing(ctx.parent_id) && ctx.parent_id != uuid
                 add_edge!(q.g, q.id2node[ctx.parent_id], q.id2node[job.uuid])
             end
         end
@@ -494,13 +501,13 @@ function run!(job::Job)
 end
 
 
+# FIXME
 function Base.wait(job::Job)
     while true
-        if istaskdone(job)
-            break
+        if status(job) in (COMPLETED, FAILED, CANCELLED)
+            return
         end
         # TODO why we need yield here?
-        # shouldn't fetch has implicit yielding???
         yield()
     end
 end
@@ -508,8 +515,9 @@ end
 function Base.wait(jobs::AbstractVector{Job})
     while true
         if all([istaskdone(j) for j in jobs])
-            break
+            return
         end
+        yield()
     end
 end
 
