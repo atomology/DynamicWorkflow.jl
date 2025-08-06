@@ -26,4 +26,8 @@ DynamicWorkflow.fetch
 DynamicWorkflow.allcomplete
 DynamicWorkflow.cancel!
 DynamicWorkflow.run!
+DynamicWorkflow.head
+DynamicWorkflow.task
+DynamicWorkflow.task_args
+DynamicWorkflow.context
 ```
