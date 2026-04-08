@@ -16,6 +16,6 @@ makedocs(
 # See "Hosting Documentation" and deploydocs() in the Documenter manual
 # for more information.
 deploydocs(
-    repo="github.com/lykex/DynamicWorkflow.jl.git",
+    repo="github.com/atomology/DynamicWorkflow.jl.git",
     devbranch="main",
 )

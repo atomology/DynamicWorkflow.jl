@@ -1,5 +1,8 @@
 # DynamicWorkflow.jl
 
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://atomology.github.io/DynamicWorkflow.jl/stable/)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://atomology.github.io/DynamicWorkflow.jl/dev/)
+
 **A flexible, lightweight scheduler for dynamic workflows in Julia.**
 
 DynamicWorkflow.jl provides a powerful and intuitive way to create and manage dynamic workflows in Julia. It allows you to wrap functions into jobs, manage dependencies between them, and execute them efficiently using Julia's threading capabilities.
