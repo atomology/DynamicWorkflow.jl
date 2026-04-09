@@ -3,9 +3,10 @@ using DynamicWorkflow
 
 makedocs(
     sitename="DynamicWorkflow.jl",
-    format=Documenter.HTML(),
+    format=Documenter.HTML(edit_link="main"),
     modules=[DynamicWorkflow],
     doctest=false,
+    repo=Documenter.Remotes.GitHub("atomology", "DynamicWorkflow.jl"),
     pages=[
         "Home" => "index.md",
         "API Reference" => "api.md",

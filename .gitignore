@@ -24,6 +24,7 @@ docs/site/
 Manifest.toml
 test/Manifest.toml
 examples/Manifest.toml
+manifest_usage.toml
 
 .vscode/*
 *.code-workspace
