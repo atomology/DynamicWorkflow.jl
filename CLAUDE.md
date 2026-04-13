@@ -3,7 +3,6 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
-
 DynamicWorkflow.jl is a Julia package for dynamic job scheduling and workflow management. It wraps functions into jobs, automatically resolves dependencies via `OutputRef` futures, and executes them in parallel using Julia's threading. Jobs can spawn child jobs during execution, enabling dynamic DAG construction with native Julia control flow (`for`, `while`, `if`).
 
 ## Development
@@ -14,10 +13,21 @@ DynamicWorkflow.jl is a Julia package for dynamic job scheduling and workflow ma
 - Don't commit Manifest.toml
 
 ## Testing
-- Run the full package test suite from the repo root with `julia --project -e 'using Pkg; Pkg.test()'`.
-- If you change docs content or public APIs, also verify the docs build with `julia --project=docs docs/make.jl`.
-- In tests, call non-exported APIs with module qualification, for example `DynamicWorkflow.context()`.
+Tests use TestItemRunner.jl with `@testitem` blocks split across files in `test/`:
+  - `setup.jl` — shared `@testmodule TestHelpers` (helper functions used across tests)
+  - `test_scheduler.jl` — initialization, scheduler lifecycle
+  - `test_basics.jl` — job macro and constructor syntax
+  - `test_job_status.jl` — status, cancellation, failure
+  - `test_spawn_jobs.jl` — child job spawning (1 and 2 levels deep)
+  - `test_dynamics.jl` — dynamic control flow (loops, conditionals)
+  - `test_visualization.jl` — DAG layout helpers, `draw_graph`
+
+- When developing, run focused tests by `julia --project=test -t 2 test/runtests.jl <test file name>`.
+- Run the full package test suite with `julia --project -e 'using Pkg; Pkg.test()'`.
 - Use `-t 2` when testing — the scheduler relies on multithreading.
+- In tests, call non-exported APIs with module qualification, for example `DynamicWorkflow.context()`.
+- Tests use `sleep()` for synchronization with the async scheduler.
+- If you change docs content or public APIs, also verify the docs build with `julia --project=docs docs/make.jl`.
 
 ## Code Style
 - Use 4 spaces for indentation.
@@ -27,14 +37,18 @@ DynamicWorkflow.jl is a Julia package for dynamic job scheduling and workflow ma
 - Add or update tests for behavior changes.
 - If a local variable has the same name as a keyword argument, Julia lets you omit the keyword name in the call, for example `foo(x; y)`.
 
+## CI
+GitHub Actions runs tests on Julia 1.x / Ubuntu x64. Documentation deploys via Documenter.yml after CI passes.
+
 ## PR checklist
 - Recommended PR title format: `<short summary>`
 - Ensure CI-equivalent checks pass locally:
-  - Package tests
+  - Full package tests
   - Docs build when docs/public APIs changed
 - Keep changes focused; avoid unrelated refactors in the same PR.
 - Summarize user-visible API changes in PR description and update README/docs examples when relevant.
 - Confirm examples and snippets still run when changing user-facing API behavior.
+
 
 ## Common Commands
 ```bash
@@ -66,10 +80,4 @@ julia --project -t 2 -e 'using DynamicWorkflow'
 
 **Execution flow**: `start_scheduler()` → scheduler main loop polls pending jobs → `resolve_args!` checks if all `OutputRef` deps are ready → ready jobs get `@spawn`ed → results stored in `OutputRef` → dependent jobs unblocked → `stop_scheduler()`.
 
-## Testing
 
-Tests are in `test/runtests.jl` — a single file with `@testset` blocks covering: initialization, scheduler lifecycle, basic jobs (macro and constructor syntax), job status/cancellation/failure, child job spawning (1 and 2 levels deep), and dynamic control flow (loops, conditionals). Tests use `sleep()` for synchronization with the async scheduler.
-
-## CI
-
-GitHub Actions runs tests on Julia 1.x / Ubuntu x64. Documentation deploys via Documenter.yml after CI passes.
