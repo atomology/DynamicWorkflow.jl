@@ -2,6 +2,7 @@ using Printf
 using GraphMakie
 using NetworkLayout
 using Makie
+using Makie: Point2f, Figure
 
 export draw_graph
 

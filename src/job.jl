@@ -281,6 +281,11 @@ function Base.istaskfailed(job::Job)
     job.task.task !== nothing && istaskfailed(job.task.task)
 end
 
+"""
+$(SIGNATURES)
+
+Check if a job has completed successfully (done and not failed).
+"""
 istasksuccess(job::Job) = istaskdone(job) && !istaskfailed(job)
 
 

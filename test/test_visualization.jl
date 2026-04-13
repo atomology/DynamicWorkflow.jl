@@ -1,7 +1,7 @@
 @testitem "visualization helpers" setup=[TestHelpers] begin
     using DynamicWorkflow
     using DynamicWorkflow: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED
-    using Makie: Point2f
+    using DynamicWorkflow: Point2f
 
     @testset "hierarchical_layout" begin
         # empty graph
@@ -69,8 +69,7 @@ end
 
 @testitem "draw_graph" setup=[TestHelpers] begin
     using DynamicWorkflow
-    using DynamicWorkflow: Q, COMPLETED, RUNNING
-    using Makie: Figure
+    using DynamicWorkflow: Q, COMPLETED, RUNNING, Figure
 
     @testset "empty graph" begin
         start_scheduler()

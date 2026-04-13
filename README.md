@@ -34,7 +34,7 @@ Pkg.add("DynamicWorkflow")
 using DynamicWorkflow
 
 # Define a job function
-function my_add(ctx::JobContext, x, y)
+function my_add(x, y)
     x + y
 end
 
@@ -54,7 +54,7 @@ result(j3)  # Get result (non-blocking)
 # Visualize the workflow
 using GLMakie
 draw_graph()
-stop_scheduler() # exit scheulder
+stop_scheduler() # exit scheduler
 ```
 
 You can directly use jobs with corresponding outputs as arguments to build workflows.

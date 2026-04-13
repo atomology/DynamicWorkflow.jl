@@ -46,6 +46,11 @@ inqueue(job::Job, q::JobQueue) = in(job.uuid, keys(q.jobs))
 inqueue(job::Job) = isassigned(Q) && inqueue(job.uuid, Q[])
 iscompleted(j::Job, q::JobQueue) = in(j.uuid, q.completed)
 iscompleted(j::Job) = isassigned(Q) && iscompleted(j, Q[].completed)
+"""
+$(SIGNATURES)
+
+Check if the scheduler's main loop is still running.
+"""
 isqueuealive(q::JobQueue) = !istaskdone(q.mainloop)
 isqueuealive() = isassigned(Q) && isqueuealive(Q[])
 """
