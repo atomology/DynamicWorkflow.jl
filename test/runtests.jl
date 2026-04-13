@@ -7,16 +7,16 @@ using Test
 
 # @run_package_tests
 
-function my_add(ctx::JobContext, x, y)
+function my_add(x, y)
     x + y
 end
 
-function my_sleep(ctx::JobContext, n::Int)
+function my_sleep(n::Int)
     sleep(n)
     return n
 end
 
-function bad_job(ctx::JobContext)
+function bad_job()
     a = []
     return a[1]
 end
@@ -113,11 +113,10 @@ end
 @testset "spawning child jobs" begin
     t = start_scheduler()
     try
-        function spawn_jobs(ctx::JobContext)
+        function spawn_jobs()
             jobs = Job[]
             for i in 1:3
-                j = @job my_add(ctx, 1, i)
-                # sleep(1)
+                j = @job my_add(1, i)
                 push!(jobs, j)
             end
             return jobs
@@ -133,9 +132,7 @@ end
         @test uuids == context(w).child_ids
         @test all([context(j).parent_id == w.uuid for j in jobs])
 
-        function add_jobs(ctx::JobContext, a, b, c)
-            return a + b + c
-        end
+        add_jobs(a, b, c) = a + b + c
         j = @job add_jobs(jobs[1], jobs[2], jobs[3])
         sleep(1)
         @test fetch(j) == 9
@@ -150,15 +147,14 @@ end
 @testset "spawning jobs level 2" begin
     t = start_scheduler()
     try
-        function spawn_jobs1(ctx::JobContext)
-            @job spawn_jobs2(ctx)
+        function spawn_jobs1()
+            @job spawn_jobs2()
         end
 
-        function spawn_jobs2(ctx::JobContext)
+        function spawn_jobs2()
             jobs = Job[]
             for i in 1:3
-                j = @job my_add(ctx, 1, i)
-                # sleep(1)
+                j = @job my_add(1, i)
                 push!(jobs, j)
             end
             return jobs
@@ -168,7 +164,6 @@ end
 
         w2 = result(w1)
         jobs = result(w2)
-
 
         uuids = map(j->j.uuid, jobs)
         @test w1.uuid == context(w1).curr_id
@@ -180,9 +175,7 @@ end
         @test uuids == context(w2).child_ids
         @test all([context(j).parent_id == w2.uuid for j in jobs])
 
-        function add_jobs(ctx::JobContext, a, b, c)
-            return a + b + c
-        end
+        add_jobs(a, b, c) = a + b + c
         j = @job add_jobs(jobs[1], jobs[2], jobs[3])
         wait(j)
         @test fetch(j) == 9

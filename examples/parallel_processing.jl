@@ -5,15 +5,15 @@ function mean(v::Vector)
     sum(v) / length(v)
 end
 
-function process_chunk(ctx::JobContext, data_chunk)
+function process_chunk(data_chunk)
     println("Processing chunk of size ", length(data_chunk))
     # Simulate some computation
     sleep(0.1)
     mean(data_chunk)
 end
 
-function create_parallel_jobs(ctx::JobContext, chunks)
-    [@job process_chunk(ctx, chunk) for chunk in chunks]
+function create_parallel_jobs(chunks)
+    [@job process_chunk(chunk) for chunk in chunks]
 end
 
 

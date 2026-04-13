@@ -2,12 +2,12 @@ using DynamicWorkflow
 using GLMakie
 
 # Define some simple job functions
-function add(ctx::JobContext, x, y)
+function add(x, y)
     println("Adding $x and $y")
     x + y
 end
 
-function multiply(ctx::JobContext, x, y)
+function multiply(x, y)
     println("Multiplying $x and $y")
     x * y
 end

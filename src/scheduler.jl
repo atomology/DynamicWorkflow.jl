@@ -148,7 +148,6 @@ function resolve_args!(job::Job, q::JobQueue)::Union{Nothing,Vector{UUID}}
     @debug "resolving denpendecies for job: $(job.name), uuid: $(job.uuid)"
     new_args = Any[]
     depends_on = UUID[]
-    ctx = context(job)
     for arg in task_args(job)
         # argument is normal variables, we assume it is always accessiable
         if !(arg isa OutputRef)
@@ -168,7 +167,6 @@ function resolve_args!(job::Job, q::JobQueue)::Union{Nothing,Vector{UUID}}
             @error "job $(job.uuid) dependencies errored, stop queue!"
         end
     end
-    pushfirst!(new_args, ctx)
     @debug "resolved arguments: $new_args"
     job.task.args = Tuple(new_args)
     return depends_on

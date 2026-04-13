@@ -2,7 +2,7 @@ using DynamicWorkflow
 using GLMakie
 
 
-function my_add(ctx::JobContext, x, y)
+function my_add(x, y)
     x + y
 end
 
@@ -17,14 +17,14 @@ function sum_n(n)
     return j
 end
 
-function fibonacci(ctx::JobContext, n)
+function fibonacci(n)
     if n <= 1
         return n
     end
 
     # Create new jobs dynamically
-    j1 = @job fibonacci(ctx, n - 1)
-    j2 = @job fibonacci(ctx, n - 2)
+    j1 = @job fibonacci(n - 1)
+    j2 = @job fibonacci(n - 2)
 
     # Wait for both jobs to complete and add their results
     fetch(j1) + fetch(j2)

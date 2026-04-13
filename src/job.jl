@@ -1,6 +1,6 @@
 using OrderedCollections: OrderedSet
 
-export Job, @job, Unassigned, SuccessResult, FailResult, JobState, JobContext
+export Job, @job, Unassigned, SuccessResult, FailResult, JobState, JobContext, current_context
 export fetch, result, status, istasksuccess, isqueuealive
 
 abstract type AbstractJob end
@@ -52,25 +52,11 @@ $(FIELDS)
 mutable struct WTask
     f::Function
     args::Tuple
-    task::Task
+    task::Union{Nothing,Task}
     function WTask(f, args...)
         @nospecialize f args
-        # set sticky bit to false by default to allow multi-threading
-        t = Task(() -> invokelatest(f, args...))
-        t.sticky = false
-        new(f, args, t)
+        new(f, args, nothing)
     end
-end
-
-"""
-$(SIGNATURES)
-
-Create a new Task from a WTask with latest scope and multi-threading.
-"""
-function task(w::WTask)
-    t = Task(() -> invokelatest(w.f, w.args...))
-    t.sticky = false
-    return t
 end
 
 """
@@ -86,6 +72,42 @@ One of the following states a job can be in: PENDING, RUNNING, COMPLETED, FAILED
 end
 
 """
+Help to build the dependency graph.
+
+Fields
+$(FIELDS)
+"""
+mutable struct JobContext
+    curr_id::UUID
+    parent_id::Union{Nothing,UUID}
+    child_ids::Vector{UUID}
+end
+JobContext(curr_id) = JobContext(curr_id, nothing, UUID[])
+
+"""
+    current_context() -> Union{Nothing, JobContext}
+
+Return the `JobContext` of the currently executing job, or `nothing` if called outside a job.
+Uses Julia `task_local_storage` for implicit context propagation.
+"""
+function current_context()
+    return get(task_local_storage(), :job_context, nothing)
+end
+
+"""
+Build a `JobContext` for a new job, linking it to the parent context if one exists.
+"""
+function _make_context(uuid::UUID)
+    parent_ctx = current_context()
+    if parent_ctx !== nothing
+        push!(parent_ctx.child_ids, uuid)
+        return JobContext(uuid, parent_ctx.curr_id, UUID[])
+    else
+        return JobContext(uuid)
+    end
+end
+
+"""
 A job that can be scheduled and run. The uuid is used to identify the job
 and the result.
 
@@ -95,77 +117,61 @@ $(FIELDS)
 mutable struct Job <: AbstractJob
     name::String
     uuid::UUID
+    context::JobContext
     task::WTask
     output::OutputRef
     status::JobState
 end
 
 function Job(f::Function, args...)
-    @debug "[$(now())] creaing job with function: $f"
+    @debug "[$(now())] creating job with function: $f"
     uuid = UUIDs.uuid4()
     @debug "uuid $uuid"
     if !isassigned(Q)
-        throw("JobQueue not initilized. Use start_scheduler().")
+        throw("JobQueue not initialized. Use start_scheduler().")
     end
     name = string(f)
-    if isempty(args) || !isa(args[1], JobContext)
-        @debug "no context for job $uuid"
-        args = (JobContext(uuid), args...)
-    else
-        @debug "job context passed for job $uuid"
-        parent_ctx = args[1]
-        push!(parent_ctx.child_ids, uuid)
-        args = (JobContext(uuid, parent_ctx.curr_id, UUID[]), args[2:end]...)
-    end
+    ctx = _make_context(uuid)
     args = map(a -> a isa Job ? a.output : a, args)
     t = WTask(f, args...)
-    result = OutputRef(uuid, Unassigned())
-    j = Job(name, uuid, t, result, PENDING)
+    output = OutputRef(uuid, Unassigned())
+    j = Job(name, uuid, ctx, t, output, PENDING)
     enqueue!(j, Q[])
     return j
 end
 
 """
-$(SIGNATURES)
-Wrap a function and create a job which will be enqueued immediately to the global JobQueue.
-The first argument of the function should take a JobContext.  
+    @job f(args...)
+
+Wrap a function call and create a job which will be enqueued immediately to the global JobQueue.
+Functions are plain Julia functions — no special first argument needed.
+
+Parent-child relationships are tracked automatically via task-local storage when
+`@job` is called inside a running job.
 
 # Examples
 ```julia
-my_add(ctx::JobContext, x, y) = x + y
+my_add(x, y) = x + y
 j1 = @job my_add(1, 2)
 j2 = @job my_add(3, 2)
 j3 = @job my_add(j1, j2)  # j3 depends on j1 and j2
 ```
 """
 macro job(expr)
-    @debug "[$(now())] creaing job with expression: $expr"
+    @debug "[$(now())] creating job with expression: $expr"
     name = string(expr.args[1])
-    # evaluate function and arguments in caller scope
     f = esc(expr.args[1])
     args = map(a -> esc(a), expr.args[2:end])
     return quote
         if !isassigned(Q)
-            throw("JobQueue not initilized. Use start_scheduler().")
+            throw("JobQueue not initialized. Use start_scheduler().")
         end
-        # macro excute when code is parsed, therefore
-        # UUID generation needs to be in caller scope
-        # otherwise will be the same in one macroexpansion
         uuid = UUIDs.uuid4()
         outputref = OutputRef(uuid, Unassigned())
         eval_args = ($(args...),)
         parsed_args = map(a -> a isa Job ? a.output : a, eval_args)
-        # can call func without ctx
-        if isempty(parsed_args) || !isa(parsed_args[1], JobContext)
-            @debug "no context for job $(uuid)"
-            parsed_args = (JobContext(uuid), parsed_args...)
-        else
-            @debug "job context passed for job $uuid"
-            parent_ctx = parsed_args[1]
-            push!(parent_ctx.child_ids, uuid)
-            parsed_args = (JobContext(uuid, parent_ctx.curr_id, UUID[]), parsed_args[2:end]...)
-        end
-        job = Job($name, uuid, WTask($f, parsed_args...), outputref, PENDING)
+        ctx = _make_context(uuid)
+        job = Job($name, uuid, ctx, WTask($f, parsed_args...), outputref, PENDING)
         enqueue!(job, Q[])
         job
     end
@@ -211,49 +217,31 @@ end
 """
 $(SIGNATURES)
 
-Extract task arguments from a job, excluding the first argument (JobContext).
+Extract task arguments from a job.
 """
 function task_args(j::Job)
-    if !isempty(j.task.args)
-        return j.task.args[2:end]
-    else
-        return j.task.args
-    end
+    return j.task.args
 end
-
-"""
-Help to build the dependency graph.
-
-Fields
-$(FIELDS)
-"""
-mutable struct JobContext
-    curr_id::UUID
-    parent_id::Union{Nothing,UUID}
-    child_ids::Vector{UUID}
-end
-JobContext(curr_id) = JobContext(curr_id, nothing, UUID[])
 
 """
 $(SIGNATURES)
 
-Extract the JobContext from job, which is the first argument to the task.
+Extract the JobContext from a job.
 """
-context(j::Job) = j.task.args[1]
-
-function dependencies(job::Job)
-    # this is a naive implementation
-    # filter only the first layer of dependencies
-    # no recursive dependencies
-    return filter(x -> x isa AbstractResult, job.task.args)
-end
+context(j::Job) = j.context
 
 """
 Non-blocking call to scheudle a Job to run with available threads. 
 """
 function run!(job::Job)
-    # reinitlialize task to update args and ignore previous task status
-    job.task.task = task(job.task)
+    ctx = job.context
+    original_f = job.task.f
+    original_args = job.task.args
+    wrapped() = task_local_storage(:job_context, ctx) do
+        invokelatest(original_f, original_args...)
+    end
+    job.task.task = Task(wrapped)
+    job.task.task.sticky = false
     schedule(job.task.task)
     yield()
 end
@@ -278,19 +266,19 @@ function Base.wait(jobs::AbstractVector{Job})
 end
 
 function Base.yield(job::Job)
-    yield(job.task.task)
+    job.task.task !== nothing && yield(job.task.task)
 end
 
 function Base.istaskstarted(job::Job)
-    istaskstarted(job.task.task)
+    job.task.task !== nothing && istaskstarted(job.task.task)
 end
 
 function Base.istaskdone(job::Job)
-    istaskdone(job.task.task)
+    job.task.task !== nothing && istaskdone(job.task.task)
 end
 
 function Base.istaskfailed(job::Job)
-    istaskfailed(job.task.task)
+    job.task.task !== nothing && istaskfailed(job.task.task)
 end
 
 istasksuccess(job::Job) = istaskdone(job) && !istaskfailed(job)
