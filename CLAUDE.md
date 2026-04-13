@@ -68,7 +68,7 @@ julia --project -t 2 -e 'using DynamicWorkflow'
 - `DynamicWorkflow.jl` — Module entry, imports, includes
 - `job.jl` — Core types (`Job`, `WTask`, `OutputRef`, `JobContext`, `JobState` enum) and execution logic
 - `scheduler.jl` — `JobQueue` struct, global scheduler state (`Q`, `SHUTDOWN`), main event loop, dependency resolution (`resolve_args!`), graph construction
-- `plot.jl` — Workflow DAG visualization via GraphMakie
+- `plot.jl` — Workflow DAG visualization via GraphMakie; uses a custom `hierarchical_layout` (top-down layer assignment), Okabe-Ito status colors, and rectangular nodes sized to label content
 - `util.jl` — Small helpers
 
 **Key abstractions**:
