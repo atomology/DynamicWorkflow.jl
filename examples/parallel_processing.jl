@@ -16,10 +16,6 @@ function create_parallel_jobs(chunks)
     [@job process_chunk(chunk) for chunk in chunks]
 end
 
-
-
-
-
 start_scheduler()
 
 # Create some sample data

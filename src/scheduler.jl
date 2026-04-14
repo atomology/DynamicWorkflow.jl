@@ -105,10 +105,10 @@ cancel!(job::Job) = cancel!(job, Q[])
 """
 $(SIGNATURES)
 
-The scheduler task can be accessed by `Q[].mainloop`.
+Start scheduler mainloop task, i.e. `Q[].mainloop`.
 """
 function start_scheduler()
-    @info "Starting JobScheduler..."
+    @info "Starting JobQueue..."
     if isassigned(Q) && !istaskdone(Q[].mainloop)
         @warn "Scheduler is already running!"
         return nothing
@@ -120,21 +120,36 @@ function start_scheduler()
     return t
 end
 
+# TODO is this needed?
 """
 $(SIGNATURES)
 
-Stop the scheduler task.
+Stop the passed scheduler.
 """
-function stop_scheduler(shutdown::Channel{Bool})
-    if !isqueuealive()
+function stop_scheduler(q::JobQueue, shutdown::Channel{Bool})
+    if !isqueuealive(q)
         @info "Job scheduler already stopped."
         return
     end
     @info "Stopping job scheduler..."
     put!(shutdown, true)
-    wait(Q[].mainloop)
+    wait(q.mainloop)
 end
-stop_scheduler() = stop_scheduler(SHUTDOWN[])
+
+"""
+$(SIGNATURES)
+
+Stop the main scheduler task, i.e. `Q[].mainloop`.
+"""
+function stop_scheduler()
+    if isassigned(Q) && isassigned(SHUTDOWN)
+        stop_scheduler(Q[], SHUTDOWN[])
+    else
+        @info "Job scheduler never started."
+    end
+end
+
+
 
 function Graphs.add_vertex!(q::JobQueue, uuid::UUID)
     try
@@ -181,7 +196,7 @@ function scheduler_main(q::JobQueue, shutdown::Channel{Bool}; sleep_time=0.01)
     t = @async begin
         while true
             if isready(shutdown)
-                @info "JobScheduler shut down!"
+                @info "JobQueue shut down!"
                 break
             end
             if allcomplete(q)

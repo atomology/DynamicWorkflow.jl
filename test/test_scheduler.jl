@@ -1,7 +1,16 @@
 @testitem "initialization" begin
     using DynamicWorkflow
+    stop_scheduler() # stop any running scheduler
+    sleep(0.5)
     @test !isqueuealive()
-    @test !allcomplete()
+    start_scheduler()
+    sleep(0.5)
+    @test isqueuealive()
+    @test allcomplete() # new JobQueue should be empty
+    stop_scheduler()
+    sleep(0.5)
+    @test !isqueuealive()
+    @test allcomplete()
 end
 
 @testitem "scheduler lifecycle" begin
