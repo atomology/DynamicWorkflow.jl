@@ -17,13 +17,15 @@ Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [compat]
-Dates = "1.11.0"
 DocStringExtensions = "0.9.5"
-Makie = "0.22.10"
-NetworkLayout = "0.4.10"
-PrettyTables = "2.4.0"
-Printf = "1.11.0"
-Reexport = "1.2.2"
+GraphMakie = "0.5"
+Graphs = "1"
+Makie = "0.22"
+NetworkLayout = "0.4"
+OrderedCollections = "1"
+PrettyTables = "2"
+Reexport = "1"
+julia = "1.11"
 
 [extras]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"

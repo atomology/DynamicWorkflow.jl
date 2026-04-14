@@ -2,6 +2,8 @@
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://atomology.github.io/DynamicWorkflow.jl/stable/)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://atomology.github.io/DynamicWorkflow.jl/dev/)
+[![CI](https://github.com/atomology/DynamicWorkflow.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/atomology/DynamicWorkflow.jl/actions/workflows/CI.yml)
+[![codecov](https://codecov.io/gh/atomology/DynamicWorkflow.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/atomology/DynamicWorkflow.jl)
 
 **A flexible, lightweight scheduler for dynamic workflows in Julia.**
 
