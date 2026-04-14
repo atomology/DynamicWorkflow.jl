@@ -8,7 +8,7 @@ DynamicWorkflow.JobContext
 DynamicWorkflow.JobState
 DynamicWorkflow.OutputRef
 DynamicWorkflow.WTask
-DynamicWorkflow.JobQueue
+DynamicWorkflow.JobScheduler
 DynamicWorkflow.SuccessResult
 DynamicWorkflow.FailResult
 DynamicWorkflow.Unassigned
@@ -26,7 +26,7 @@ DynamicWorkflow.fetch
 DynamicWorkflow.allcomplete
 DynamicWorkflow.cancel!
 DynamicWorkflow.istasksuccess
-DynamicWorkflow.isqueuealive
+DynamicWorkflow.isalive
 DynamicWorkflow.current_context
 DynamicWorkflow.run!
 DynamicWorkflow.head

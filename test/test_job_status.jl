@@ -1,6 +1,6 @@
 @testitem "job status" setup=[TestHelpers] begin
     using DynamicWorkflow
-    using DynamicWorkflow: Q, PENDING, RUNNING, CANCELLED, COMPLETED, FAILED
+    using DynamicWorkflow: JS, PENDING, RUNNING, CANCELLED, COMPLETED, FAILED
     t = start_scheduler()
     try
         j1 = @job my_add(1, 2)
@@ -18,7 +18,7 @@
         j1 = @job bad_job()
         sleep(1)
         @test status(j1) == FAILED
-        @test isqueuealive(Q[])
+        @test isalive(JS[])
     catch e
         throw(e)
     finally

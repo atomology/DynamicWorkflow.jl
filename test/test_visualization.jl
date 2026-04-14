@@ -69,12 +69,12 @@ end
 
 @testitem "draw_graph" setup=[TestHelpers] begin
     using DynamicWorkflow
-    using DynamicWorkflow: Q, COMPLETED, RUNNING, Figure
+    using DynamicWorkflow: JS, COMPLETED, RUNNING, Figure
 
     @testset "empty graph" begin
         start_scheduler()
         try
-            f = draw_graph(Q[])
+            f = draw_graph(JS[])
             @test f isa Figure
         finally
             stop_scheduler()
@@ -91,13 +91,13 @@ end
             sleep(1)
             @test allcomplete()
 
-            f = draw_graph(Q[])
+            f = draw_graph(JS[])
             @test f isa Figure
 
             # verify node labels contain function names
-            g = Q[].g
+            g = JS[].g
             @test nv(g) == 3
-            jobs = [Q[].jobs[Q[].node2id[i]] for i in 1:nv(g)]
+            jobs = [JS[].jobs[JS[].node2id[i]] for i in 1:nv(g)]
             labels = map(DynamicWorkflow.node_label, jobs)
             @test all(l -> contains(l, "my_add"), labels)
             @test all(l -> contains(l, "\n"), labels)
@@ -120,10 +120,10 @@ end
             @test status(j1) == COMPLETED
             @test status(j2) == RUNNING
 
-            f = draw_graph(Q[])
+            f = draw_graph(JS[])
             @test f isa Figure
 
-            jobs = [Q[].jobs[Q[].node2id[i]] for i in 1:nv(Q[].g)]
+            jobs = [JS[].jobs[JS[].node2id[i]] for i in 1:nv(JS[].g)]
             colors = map(j -> DynamicWorkflow.status_color(j.status), jobs)
             @test "#009E73" in colors  # at least one COMPLETED (green)
             @test "#0072B2" in colors  # at least one RUNNING (blue)

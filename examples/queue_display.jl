@@ -1,6 +1,6 @@
 using DynamicWorkflow
-import DynamicWorkflow: Q
-# Test the JobQueue display functionality with different job statuses
+import DynamicWorkflow: JS
+# Test the JobScheduler display functionality with different job statuses
 start_scheduler()
 
 # Create a simple job function
@@ -26,8 +26,8 @@ j4 = @job failing_func(1) # failed
 
 sleep(1)
 
-# Display the JobQueue
-println("JobQueue display:")
-display(Q[])
+# Display the JobScheduler
+println("JobScheduler display:")
+display(JS[])
 
 stop_scheduler()

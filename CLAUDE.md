@@ -69,7 +69,7 @@ julia --project -t 2 -e 'using DynamicWorkflow'
 **Source files** (`src/`):
 - `DynamicWorkflow.jl` — Module entry, imports, includes
 - `job.jl` — Core types (`Job`, `WTask`, `OutputRef`, `JobContext`, `JobState` enum) and execution logic
-- `scheduler.jl` — `JobQueue` struct, global scheduler state (`Q`, `SHUTDOWN`), main event loop, dependency resolution (`resolve_args!`), graph construction
+- `scheduler.jl` — `JobScheduler` struct, global scheduler state (`JS`, `SHUTDOWN`), main event loop, dependency resolution (`resolve_args!`), graph construction
 - `plot.jl` — Workflow DAG visualization via GraphMakie; uses a custom `hierarchical_layout` (top-down layer assignment), Okabe-Ito status colors, and rectangular nodes sized to label content
 - `util.jl` — Small helpers
 
@@ -77,7 +77,7 @@ julia --project -t 2 -e 'using DynamicWorkflow'
 - `Job` holds a `WTask` (function + args), a `JobContext`, an `OutputRef` (future for result), and a `JobState`
 - `OutputRef` is the dependency mechanism — when a job's argument is an `OutputRef`, the scheduler waits for it to resolve before running that job
 - `JobContext` is stored on the `Job` struct and propagated via task-local storage; it tracks parent/child relationships automatically when jobs spawn child jobs — user functions don't need a context parameter
-- `JobQueue` is the global scheduler state, protected by a `ReentrantLock`, with `pending`/`running`/`completed` sets and a `SimpleDiGraph` for the dependency graph
+- `JobScheduler` is the global scheduler state, protected by a `ReentrantLock`, with `pending`/`running`/`completed` sets and a `SimpleDiGraph` for the dependency graph
 - `@job` macro evaluates in caller scope, auto-converts `Job` arguments to their `OutputRef`, and reads parent context from TLS for automatic parent-child tracking
 
 **Execution flow**: `start_scheduler()` → scheduler main loop polls pending jobs → `resolve_args!` checks if all `OutputRef` deps are ready → ready jobs get `@spawn`ed → results stored in `OutputRef` → dependent jobs unblocked → `stop_scheduler()`.

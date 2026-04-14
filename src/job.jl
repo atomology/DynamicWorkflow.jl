@@ -1,7 +1,7 @@
 using OrderedCollections: OrderedSet
 
 export Job, @job, Unassigned, SuccessResult, FailResult, JobState, JobContext, current_context
-export fetch, result, status, istasksuccess, isqueuealive
+export fetch, result, status, istasksuccess, isalive
 
 abstract type AbstractJob end
 abstract type AbstractResult end
@@ -127,8 +127,8 @@ function Job(f::Function, args...)
     @debug "[$(now())] creating job with function: $f"
     uuid = UUIDs.uuid4()
     @debug "uuid $uuid"
-    if !isassigned(Q)
-        throw("JobQueue not initialized. Use start_scheduler().")
+    if !isassigned(JS)
+        throw("JobScheduler not initialized. Use start_scheduler().")
     end
     name = string(f)
     ctx = _make_context(uuid)
@@ -136,14 +136,14 @@ function Job(f::Function, args...)
     t = WTask(f, args...)
     output = OutputRef(uuid, Unassigned())
     j = Job(name, uuid, ctx, t, output, PENDING)
-    enqueue!(j, Q[])
+    submit!(j, JS[])
     return j
 end
 
 """
     @job f(args...)
 
-Wrap a function call and create a job which will be enqueued immediately to the global JobQueue.
+Wrap a function call and create a job which will be submitted immediately to the global JobScheduler.
 Functions are plain Julia functions — no special first argument needed.
 
 Parent-child relationships are tracked automatically via task-local storage when
@@ -163,8 +163,8 @@ macro job(expr)
     f = esc(expr.args[1])
     args = map(a -> esc(a), expr.args[2:end])
     return quote
-        if !isassigned(Q)
-            throw("JobQueue not initialized. Use start_scheduler().")
+        if !isassigned(JS)
+            throw("JobScheduler not initialized. Use start_scheduler().")
         end
         uuid = UUIDs.uuid4()
         outputref = OutputRef(uuid, Unassigned())
@@ -172,7 +172,7 @@ macro job(expr)
         parsed_args = map(a -> a isa Job ? a.output : a, eval_args)
         ctx = _make_context(uuid)
         job = Job($name, uuid, ctx, WTask($f, parsed_args...), outputref, PENDING)
-        enqueue!(job, Q[])
+        submit!(job, JS[])
         job
     end
 end

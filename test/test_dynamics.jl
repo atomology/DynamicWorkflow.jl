@@ -1,6 +1,6 @@
 @testitem "dynamics 1: for loop and conditional" setup=[TestHelpers] begin
     using DynamicWorkflow
-    using DynamicWorkflow: Q
+    using DynamicWorkflow: JS
     t = start_scheduler()
     try
         function workflow()
@@ -18,12 +18,12 @@
         end
         @test workflow() == 10
         sleep(1)
-        @test length(Q[].pending) == 0
-        @test length(Q[].running) == 0
+        @test length(JS[].pending) == 0
+        @test length(JS[].running) == 0
         @test allcomplete()
-        @test length(Q[].completed) == 6
-        @test nv(Q[].g) == 6
-        @test ne(Q[].g) == 6
+        @test length(JS[].completed) == 6
+        @test nv(JS[].g) == 6
+        @test ne(JS[].g) == 6
     catch e
         throw(e)
     finally
@@ -33,7 +33,7 @@ end
 
 @testitem "dynamics 2: while loop" setup=[TestHelpers] begin
     using DynamicWorkflow
-    using DynamicWorkflow: Q
+    using DynamicWorkflow: JS
     t = start_scheduler()
     try
         function workflow()
@@ -48,12 +48,12 @@ end
         end
         @test workflow() == 4
         sleep(1)
-        @test length(Q[].pending) == 0
-        @test length(Q[].running) == 0
+        @test length(JS[].pending) == 0
+        @test length(JS[].running) == 0
         @test allcomplete()
-        @test length(Q[].completed) == 3
-        @test nv(Q[].g) == 3
-        @test ne(Q[].g) == 2
+        @test length(JS[].completed) == 3
+        @test nv(JS[].g) == 3
+        @test ne(JS[].g) == 2
     catch e
         throw(e)
     finally

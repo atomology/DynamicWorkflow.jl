@@ -81,15 +81,15 @@ end
 Draw workflow graph. Default layout is hierarchical, can take layouts defined in
 NetworkLayout.jl.
 """
-function draw_graph(q::JobQueue; layout=hierarchical_layout)
+function draw_graph(js::JobScheduler; layout=hierarchical_layout)
     NODE_HEIGHT  = 30
     FIG_SIZE = (1200, 800)
 
-    g = q.g
+    g = js.g
     n = nv(g)
     n == 0 && return Figure()
 
-    jobs    = [q.jobs[q.node2id[i]] for i in 1:n]
+    jobs    = [js.jobs[js.node2id[i]] for i in 1:n]
     labels  = map(node_label, jobs)
     colors  = map(j -> status_color(j.status), jobs)
     tcolors = map(j -> status_text_color(j.status), jobs)
@@ -117,9 +117,9 @@ function draw_graph(q::JobQueue; layout=hierarchical_layout)
     register_interaction!(ax, :ndrag, NodeDrag(p))
     hidedecorations!(ax)
     hidespines!(ax)
-    ax.title  = "JobQueue Graph"
+    ax.title  = "JobScheduler Graph"
     ax.aspect = DataAspect()
     return f
 end
 
-draw_graph(; layout=hierarchical_layout) = draw_graph(Q[]; layout=layout)
+draw_graph(; layout=hierarchical_layout) = draw_graph(JS[]; layout=layout)
