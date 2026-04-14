@@ -1,4 +1,4 @@
-@testitem "job status" setup=[TestHelpers] begin
+@testitem "job status" setup = [TestHelpers] begin
     using DynamicWorkflow
     using DynamicWorkflow: JS, PENDING, RUNNING, CANCELLED, COMPLETED, FAILED
     t = start_scheduler()

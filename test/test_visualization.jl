@@ -1,4 +1,4 @@
-@testitem "visualization helpers" setup=[TestHelpers] begin
+@testitem "visualization helpers" setup = [TestHelpers] begin
     using DynamicWorkflow
     using DynamicWorkflow: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED
     using DynamicWorkflow: Point2f
@@ -44,16 +44,16 @@
     end
 
     @testset "status_color and status_text_color" begin
-        @test DynamicWorkflow.status_color(PENDING)   == "#CCCCCC"
-        @test DynamicWorkflow.status_color(RUNNING)   == "#0072B2"
+        @test DynamicWorkflow.status_color(PENDING) == "#CCCCCC"
+        @test DynamicWorkflow.status_color(RUNNING) == "#0072B2"
         @test DynamicWorkflow.status_color(COMPLETED) == "#009E73"
-        @test DynamicWorkflow.status_color(FAILED)    == "#D55E00"
+        @test DynamicWorkflow.status_color(FAILED) == "#D55E00"
         @test DynamicWorkflow.status_color(CANCELLED) == "#CC79A7"
 
-        @test DynamicWorkflow.status_text_color(PENDING)   == "#333333"
-        @test DynamicWorkflow.status_text_color(RUNNING)   == "white"
+        @test DynamicWorkflow.status_text_color(PENDING) == "#333333"
+        @test DynamicWorkflow.status_text_color(RUNNING) == "white"
         @test DynamicWorkflow.status_text_color(COMPLETED) == "white"
-        @test DynamicWorkflow.status_text_color(FAILED)    == "white"
+        @test DynamicWorkflow.status_text_color(FAILED) == "white"
         @test DynamicWorkflow.status_text_color(CANCELLED) == "white"
     end
 
@@ -67,7 +67,7 @@
     end
 end
 
-@testitem "draw_graph" setup=[TestHelpers] begin
+@testitem "draw_graph" setup = [TestHelpers] begin
     using DynamicWorkflow
     using DynamicWorkflow: JS, COMPLETED, RUNNING, Figure
 

@@ -4,12 +4,12 @@ using GLMakie
 # Define some simple job functions
 function add(x, y)
     println("Adding $x and $y")
-    x + y
+    return x + y
 end
 
 function multiply(x, y)
     println("Multiplying $x and $y")
-    x * y
+    return x * y
 end
 
 # Start the scheduler

@@ -1,4 +1,4 @@
-@testitem "basics: job macros" setup=[TestHelpers] begin
+@testitem "basics: job macros" setup = [TestHelpers] begin
     using DynamicWorkflow
     using DynamicWorkflow: JS
     t = start_scheduler()
@@ -23,7 +23,7 @@
     end
 end
 
-@testitem "basics: job function" setup=[TestHelpers] begin
+@testitem "basics: job function" setup = [TestHelpers] begin
     using DynamicWorkflow
     using DynamicWorkflow: JS
     t = start_scheduler()

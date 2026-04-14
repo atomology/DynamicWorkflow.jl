@@ -12,7 +12,7 @@ $(FIELDS)
 """
 mutable struct JobScheduler
     # all jobs
-    jobs::Dict{UUID,Job}
+    jobs::Dict{UUID, Job}
     # jobs to run
     pending::OrderedSet{UUID}
     # jobs running
@@ -22,18 +22,18 @@ mutable struct JobScheduler
     # the dependency graph of ran jobs
     g::SimpleDiGraph
     # mapping between graph node id and job uuid
-    node2id::Dict{Int,UUID}
-    id2node::Dict{UUID,Int}
+    node2id::Dict{Int, UUID}
+    id2node::Dict{UUID, Int}
     lock::ReentrantLock
-    mainloop::Union{Nothing,Task}
+    mainloop::Union{Nothing, Task}
     function JobScheduler()
-        jobs = Dict{UUID,Job}()
+        jobs = Dict{UUID, Job}()
         pending = OrderedSet{UUID}()
         running = OrderedSet{UUID}()
         completed = OrderedSet{UUID}()
         g = SimpleDiGraph()
-        node2id = Dict{Int,UUID}()
-        id2node = Dict{UUID,Int}()
+        node2id = Dict{Int, UUID}()
+        id2node = Dict{UUID, Int}()
         return new(jobs, pending, running, completed, g, node2id, id2node, ReentrantLock(), nothing)
     end
 end
@@ -61,7 +61,7 @@ allcomplete(js::JobScheduler) = isempty(js.pending) && isempty(js.running)
 allcomplete() = isassigned(JS) && allcomplete(JS[])
 
 function submit!(job::Job, js::JobScheduler)
-    lock(js.lock) do
+    return lock(js.lock) do
         push!(js.jobs, job.uuid => job)
         push!(js.pending, job.uuid)
         job.status = PENDING
@@ -132,7 +132,7 @@ function stop_scheduler(js::JobScheduler, shutdown::Channel{Bool})
     end
     @info "Stopping scheduler..."
     put!(shutdown, true)
-    wait(js.mainloop)
+    return wait(js.mainloop)
 end
 
 """
@@ -141,13 +141,12 @@ $(SIGNATURES)
 Stop the main scheduler task, i.e. `JS[].mainloop`.
 """
 function stop_scheduler()
-    if isassigned(JS) && isassigned(SHUTDOWN)
+    return if isassigned(JS) && isassigned(SHUTDOWN)
         stop_scheduler(JS[], SHUTDOWN[])
     else
         @info "Scheduler never started."
     end
 end
-
 
 
 function Graphs.add_vertex!(js::JobScheduler, uuid::UUID)
@@ -163,7 +162,7 @@ function Graphs.add_vertex!(js::JobScheduler, uuid::UUID)
 end
 
 # return nothing if job is not runnable
-function resolve_args!(job::Job, js::JobScheduler)::Union{Nothing,Vector{UUID}}
+function resolve_args!(job::Job, js::JobScheduler)::Union{Nothing, Vector{UUID}}
     @debug "resolving denpendecies for job: $(job.name), uuid: $(job.uuid)"
     new_args = Any[]
     depends_on = UUID[]
@@ -191,7 +190,7 @@ function resolve_args!(job::Job, js::JobScheduler)::Union{Nothing,Vector{UUID}}
     return depends_on
 end
 
-function scheduler_main(js::JobScheduler, shutdown::Channel{Bool}; sleep_time=0.01)
+function scheduler_main(js::JobScheduler, shutdown::Channel{Bool}; sleep_time = 0.01)
     t = @async begin
         while true
             if isready(shutdown)
@@ -246,7 +245,7 @@ end
 
 function execute_job!(js::JobScheduler, uuid::UUID, depends_on)
     job = js.jobs[uuid]
-    try
+    return try
         lock(js.lock) do
             delete!(js.pending, uuid)
             push!(js.running, uuid)
@@ -285,7 +284,7 @@ function Base.show(io::IO, ::MIME"text/plain", js::JobScheduler)
     println(io, "  Done: $(length(js.completed))")
 
     # If there are jobs, create a table with job details
-    if !isempty(js.jobs)
+    return if !isempty(js.jobs)
         # Prepare data for the table
         names = String[]
         uuids = String[]
@@ -328,16 +327,17 @@ function Base.show(io::IO, ::MIME"text/plain", js::JobScheduler)
         )
 
         # Print table with job information and highlighting
-        pretty_table(io, hcat(names, uuids, statuses);
-            header=["Name", "UUID", "Status"],
-            alignment=[:l, :l, :l],
-            crop=:none,
-            highlighters=(hl_pending, hl_running, hl_completed, hl_failed, hl_cancelled)
+        pretty_table(
+            io, hcat(names, uuids, statuses);
+            header = ["Name", "UUID", "Status"],
+            alignment = [:l, :l, :l],
+            crop = :none,
+            highlighters = (hl_pending, hl_running, hl_completed, hl_failed, hl_cancelled)
         )
     end
 end
 
 
 function Base.show(io::IO, js::JobScheduler)
-    print(io, "JobScheduler($(length(js.jobs)) jobs)")
+    return print(io, "JobScheduler($(length(js.jobs)) jobs)")
 end

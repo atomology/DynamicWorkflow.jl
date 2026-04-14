@@ -27,7 +27,7 @@ function hierarchical_layout(g::AbstractGraph)
     end
 
     # Group nodes by layer.
-    max_layer = maximum(layers; init=0)
+    max_layer = maximum(layers; init = 0)
     layer_nodes = [Int[] for _ in 0:max_layer]
     for v in 1:n
         push!(layer_nodes[layers[v] + 1], v)
@@ -36,7 +36,7 @@ function hierarchical_layout(g::AbstractGraph)
     # Assign 2D positions: y decreases with depth (top = 0), x spread evenly.
     positions = Vector{Point2f}(undef, n)
     for (li, nodes) in enumerate(layer_nodes)
-        y = Float32(-(li - 1)*0.05)
+        y = Float32(-(li - 1) * 0.05)
         for (i, v) in enumerate(nodes)
             x = Float32(i) / Float32(length(nodes) + 1)
             positions[v] = Point2f(x, y)
@@ -46,11 +46,11 @@ function hierarchical_layout(g::AbstractGraph)
     return positions
 end
 
-const STATUS_COLORS = Dict{JobState,Tuple{String,String}}(
-    PENDING   => ("#CCCCCC", "#333333"),
-    RUNNING   => ("#0072B2", "white"),
+const STATUS_COLORS = Dict{JobState, Tuple{String, String}}(
+    PENDING => ("#CCCCCC", "#333333"),
+    RUNNING => ("#0072B2", "white"),
     COMPLETED => ("#009E73", "white"),
-    FAILED    => ("#D55E00", "white"),
+    FAILED => ("#D55E00", "white"),
     CANCELLED => ("#CC79A7", "white"),
 )
 
@@ -63,7 +63,7 @@ status_text_color(s::JobState) = STATUS_COLORS[s][2]
 
 """Two-line node label: function name on line 1, last 5 chars of UUID on line 2."""
 function node_label(j::Job)
-    short_id = string(j.uuid)[end-4:end]
+    short_id = string(j.uuid)[(end - 4):end]
     return "$(j.name)\n$(short_id)"
 end
 
@@ -81,45 +81,46 @@ end
 Draw workflow graph. Default layout is hierarchical, can take layouts defined in
 NetworkLayout.jl.
 """
-function draw_graph(js::JobScheduler; layout=hierarchical_layout)
-    NODE_HEIGHT  = 30
+function draw_graph(js::JobScheduler; layout = hierarchical_layout)
+    NODE_HEIGHT = 30
     FIG_SIZE = (1200, 800)
 
     g = js.g
     n = nv(g)
     n == 0 && return Figure()
 
-    jobs    = [js.jobs[js.node2id[i]] for i in 1:n]
-    labels  = map(node_label, jobs)
-    colors  = map(j -> status_color(j.status), jobs)
+    jobs = [js.jobs[js.node2id[i]] for i in 1:n]
+    labels = map(node_label, jobs)
+    colors = map(j -> status_color(j.status), jobs)
     tcolors = map(j -> status_text_color(j.status), jobs)
-    widths  = map(node_width, labels)
-    sizes   = map(w -> Vec2f(w, NODE_HEIGHT), widths)
+    widths = map(node_width, labels)
+    sizes = map(w -> Vec2f(w, NODE_HEIGHT), widths)
 
-    f = Figure(size=FIG_SIZE)
+    f = Figure(size = FIG_SIZE)
     ax = Axis(f[1, 1])
-    p = graphplot!(ax, g;
-        layout          = layout,
-        edge_width      = [2 for _ in 1:ne(g)],
-        node_size       = sizes,
-        node_marker     = Rect,
-        node_color      = colors,
-        nlabels         = labels,
-        nlabels_align   = (:center, :center),
-        nlabels_color   = tcolors,
+    p = graphplot!(
+        ax, g;
+        layout = layout,
+        edge_width = [2 for _ in 1:ne(g)],
+        node_size = sizes,
+        node_marker = Rect,
+        node_color = colors,
+        nlabels = labels,
+        nlabels_align = (:center, :center),
+        nlabels_color = tcolors,
         nlabels_distance = 0,
         nlabels_fontsize = 14,
-        arrow_size      = 12,
-        edge_color      = :gray,
+        arrow_size = 12,
+        edge_color = :gray,
     )
     deregister_interaction!(ax, :rectanglezoom)
     register_interaction!(ax, :ehover, EdgeHoverHighlight(p))
     register_interaction!(ax, :ndrag, NodeDrag(p))
     hidedecorations!(ax)
     hidespines!(ax)
-    ax.title  = "JobScheduler Graph"
+    ax.title = "JobScheduler Graph"
     ax.aspect = DataAspect()
     return f
 end
 
-draw_graph(; layout=hierarchical_layout) = draw_graph(JS[]; layout=layout)
+draw_graph(; layout = hierarchical_layout) = draw_graph(JS[]; layout = layout)

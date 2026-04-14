@@ -52,10 +52,10 @@ $(FIELDS)
 mutable struct WTask
     f::Function
     args::Tuple
-    task::Union{Nothing,Task}
+    task::Union{Nothing, Task}
     function WTask(f, args...)
         @nospecialize f args
-        new(f, args, nothing)
+        return new(f, args, nothing)
     end
 end
 
@@ -79,7 +79,7 @@ $(FIELDS)
 """
 mutable struct JobContext
     curr_id::UUID
-    parent_id::Union{Nothing,UUID}
+    parent_id::Union{Nothing, UUID}
     child_ids::Vector{UUID}
 end
 JobContext(curr_id) = JobContext(curr_id, nothing, UUID[])
@@ -184,7 +184,7 @@ end
 Return one of the [`JobState`](@ref) enum values.
 """
 function status(job::Job)
-    job.status
+    return job.status
 end
 
 """
@@ -196,7 +196,7 @@ Get the result of a job without blocking.
 The job's result or [`Unassigned`](@ref) if not ready
 """
 function result(job::Job)
-    result(job.output)
+    return result(job.output)
 end
 
 """
@@ -231,7 +231,7 @@ Extract the JobContext from a job.
 context(j::Job) = j.context
 
 """
-Non-blocking call to scheudle a Job to run with available threads. 
+Non-blocking call to scheudle a Job to run with available threads.
 """
 function run!(job::Job)
     ctx = job.context
@@ -243,7 +243,7 @@ function run!(job::Job)
     job.task.task = Task(wrapped)
     job.task.task.sticky = false
     schedule(job.task.task)
-    yield()
+    return yield()
 end
 
 function Base.wait(job::Job)
@@ -254,6 +254,7 @@ function Base.wait(job::Job)
         # TODO why we need yield here?
         yield()
     end
+    return
 end
 
 function Base.wait(jobs::AbstractVector{Job})
@@ -263,22 +264,23 @@ function Base.wait(jobs::AbstractVector{Job})
         end
         yield()
     end
+    return
 end
 
 function Base.yield(job::Job)
-    job.task.task !== nothing && yield(job.task.task)
+    return job.task.task !== nothing && yield(job.task.task)
 end
 
 function Base.istaskstarted(job::Job)
-    job.task.task !== nothing && istaskstarted(job.task.task)
+    return job.task.task !== nothing && istaskstarted(job.task.task)
 end
 
 function Base.istaskdone(job::Job)
-    job.task.task !== nothing && istaskdone(job.task.task)
+    return job.task.task !== nothing && istaskdone(job.task.task)
 end
 
 function Base.istaskfailed(job::Job)
-    job.task.task !== nothing && istaskfailed(job.task.task)
+    return job.task.task !== nothing && istaskfailed(job.task.task)
 end
 
 """
@@ -290,12 +292,12 @@ istasksuccess(job::Job) = istaskdone(job) && !istaskfailed(job)
 
 
 function Base.show(io::IO, ::MIME"text/plain", job::Job)
-    print(io, "Job(\"$(job.name)\", $(head(job.uuid)), status=$(repr("text/plain", status(job))))")
+    return print(io, "Job(\"$(job.name)\", $(head(job.uuid)), status=$(repr("text/plain", status(job))))")
 end
 
 
 function Base.show(io::IO, ::MIME"text/plain", status::JobState)
-    if status == PENDING
+    return if status == PENDING
         print(io, "🚧PENDING")
     elseif status == RUNNING
         print(io, "🏃RUNNING")

@@ -3,7 +3,7 @@ using GLMakie
 
 
 function my_add(x, y)
-    x + y
+    return x + y
 end
 
 function sum_n(n)
@@ -27,9 +27,8 @@ function fibonacci(n)
     j2 = @job fibonacci(n - 2)
 
     # Wait for both jobs to complete and add their results
-    fetch(j1) + fetch(j2)
+    return fetch(j1) + fetch(j2)
 end
-
 
 
 # Start the scheduler

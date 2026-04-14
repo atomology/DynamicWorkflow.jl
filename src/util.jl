@@ -1,4 +1,3 @@
-
 """
     head(uuid::UUID) -> String
 

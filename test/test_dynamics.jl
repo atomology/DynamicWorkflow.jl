@@ -1,4 +1,4 @@
-@testitem "dynamics 1: for loop and conditional" setup=[TestHelpers] begin
+@testitem "dynamics 1: for loop and conditional" setup = [TestHelpers] begin
     using DynamicWorkflow
     using DynamicWorkflow: JS
     t = start_scheduler()
@@ -31,7 +31,7 @@
     end
 end
 
-@testitem "dynamics 2: while loop" setup=[TestHelpers] begin
+@testitem "dynamics 2: while loop" setup = [TestHelpers] begin
     using DynamicWorkflow
     using DynamicWorkflow: JS
     t = start_scheduler()

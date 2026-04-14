@@ -1,4 +1,4 @@
-@testitem "spawning child jobs" setup=[TestHelpers] begin
+@testitem "spawning child jobs" setup = [TestHelpers] begin
     using DynamicWorkflow
     using DynamicWorkflow: context, JS
     t = start_scheduler()
@@ -34,7 +34,7 @@
     end
 end
 
-@testitem "spawning jobs level 2" setup=[TestHelpers] begin
+@testitem "spawning jobs level 2" setup = [TestHelpers] begin
     using DynamicWorkflow
     using DynamicWorkflow: context, JS
     t = start_scheduler()
